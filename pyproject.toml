@@ -1,0 +1,33 @@
+[project]
+name = "rentflow"
+version = "0.1.0"
+description = "Prototipo de RentFlow: matching de habitaciones y compañeros de piso en Madrid (Streamlit + SQLite)"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    # >=1.50: usamos width="stretch" (sustituye a use_container_width, obsoleto)
+    "streamlit>=1.50,<2",
+]
+
+[project.scripts]
+rentflow-seed = "rentflow.seed:main"  # uv run rentflow-seed
+
+[dependency-groups]
+dev = [
+    "pytest>=9.2.0",
+    "ruff>=0.17.5",
+]
+
+[build-system]
+requires = ["uv_build>=0.12,<0.13"]
+build-backend = "uv_build"  # código en src/rentflow/; uv sync lo instala en modo editable
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

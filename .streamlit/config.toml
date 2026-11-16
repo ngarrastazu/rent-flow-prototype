@@ -1,0 +1,17 @@
+# Tema de RentFlow (docs/DESIGN.md §5)
+[theme]
+primaryColor = "#4B02F2"
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#F7F6FB"
+textColor = "#14102B"
+# Inter desde Google Fonts (DESIGN.md §4); si no carga, Streamlit usa la sans serif del sistema
+font = "Inter:https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap"
+headingFont = "Inter Tight:https://fonts.googleapis.com/css2?family=Inter+Tight:wght@600;700&display=swap"
+headingFontWeights = [700, 700, 700, 600, 600, 600]
+baseRadius = "10px"
+borderColor = "#E6E3F0"
+linkColor = "#4B02F2"
+base = "light"
+
+[client]
+toolbarMode = "minimal"   # sin menú de desarrollador en la demo

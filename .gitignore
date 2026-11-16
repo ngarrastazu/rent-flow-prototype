@@ -1,0 +1,14 @@
+# Entorno de uv
+.venv/
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+
+# Base de datos local (data/rentflow.db): se regenera con `uv run rentflow-seed`
+data/*
+!data/.gitkeep
+*.db
+*.db-journal

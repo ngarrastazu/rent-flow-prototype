@@ -1,0 +1,87 @@
+"""Tests del algoritmo de matching y de la historia de la demo."""
+import pytest
+
+from rentflow import db, matching
+
+TENANT = {
+    "budget_min": 400, "budget_max": 600, "zones": ["Chamberí"], "move_in": "2027-01-10",
+    "schedule": db.SCHEDULES[0], "cleanliness": 4, "noise": 2, "smokes": 0, "pets": 0, "own_bathroom": 0,
+}
+ROOM = {
+    "price": 600, "zone": "Chamberí", "own_bathroom": 0, "available_from": "2027-01-01",
+    "smoking_allowed": 0, "pets_allowed": 0,
+}
+
+
+def test_weights_sum_to_one():
+    assert sum(matching.WEIGHTS.values()) == pytest.approx(1)
+
+
+def test_perfect_match_without_roommates():
+    score, breakdown = matching.score_room(TENANT, ROOM, [])
+    assert breakdown["Presupuesto"] == 1
+    assert breakdown["Zona"] == 1
+    assert breakdown["Horarios"] == matching.NO_ROOMMATES_SCORE
+    assert set(breakdown) == set(matching.WEIGHTS)
+    assert 0 <= score <= 100
+
+
+def test_identical_roommate_scores_100():
+    score, _ = matching.score_room(TENANT, ROOM, [TENANT])
+    assert score == 100
+
+
+@pytest.mark.parametrize("tenant_change, room_change", [
+    ({}, {"price": 661}),                              # > presupuesto + 10 %
+    ({"smokes": 1}, {}),                               # fuma y no se permite
+    ({"pets": 1}, {}),                                 # mascota y no se admiten
+    ({"own_bathroom": 1}, {}),                         # necesita baño propio
+    ({}, {"available_from": "2027-02-15"}),            # libre > 30 días después
+])
+def test_hard_filters_discard_room(tenant_change, room_change):
+    assert matching.score_room({**TENANT, **tenant_change}, {**ROOM, **room_change}, []) is None
+
+
+def test_over_budget_penalised_but_kept():
+    _, breakdown = matching.score_room(TENANT, {**ROOM, "price": 660}, [])
+    assert breakdown["Presupuesto"] == pytest.approx(0.4)
+
+
+def test_zone_outside_preferences():
+    _, breakdown = matching.score_room(TENANT, {**ROOM, "zone": "Usera"}, [])
+    assert breakdown["Zona"] == 0.3
+
+
+# ---------- La historia de la demo (no romper) ----------
+
+def test_mario_first_match_is_chamberi_94(seeded_db):
+    mario = db.find_user_by_name("Mario Rossi")
+    assert mario["id"] == 1
+    top = matching.matches_for(mario["id"])[0]
+    assert top["room"]["id"] == 1
+    assert top["room"]["title"] == "Habitación con baño propio en Chamberí"
+    assert top["score"] == 94
+    assert {m["name"] for m in top["mates"]} == {"Lucía Martín", "Tom Becker"}
+
+
+def test_seed_counts(seeded_db):
+    assert len(db.list_users("inquilino")) == 51
+    assert len(db.list_users("casero")) == 8
+    assert len(db.active_rooms()) == 30
+
+
+def test_reverse_search_excludes_people_already_living_in_a_flat(seeded_db):
+    living = db.rooms_lived_in()
+    candidates = matching.candidates_for(1)
+    assert candidates
+    assert all(c["tenant"]["id"] not in living for c in candidates)
+    assert [c["score"] for c in candidates] == sorted((c["score"] for c in candidates), reverse=True)
+
+
+def test_seed_is_repeatable(seeded_db):
+    """'Reiniciar datos de la demo' vuelve a llamar a seed() en el mismo proceso: debe dar lo mismo."""
+    from rentflow import seed
+
+    before = db.query("SELECT * FROM preferences ORDER BY user_id")
+    seed.seed()
+    assert db.query("SELECT * FROM preferences ORDER BY user_id") == before
