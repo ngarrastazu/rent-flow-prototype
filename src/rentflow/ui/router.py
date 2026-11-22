@@ -4,12 +4,13 @@ import streamlit as st
 from rentflow import db, seed
 from rentflow.ui.components import person_header
 from rentflow.ui.landing import landing
-from rentflow.ui.landlord import page_my_rooms, page_publish
+from rentflow.ui.landlord import page_landlord_profile, page_my_rooms, page_publish
 from rentflow.ui.messages import page_messages
 from rentflow.ui.metrics import page_metrics
 from rentflow.ui.navigation import (
     LANDLORD_PAGES,
     PAGE_ICONS,
+    PAGE_LANDLORD_PROFILE,
     PAGE_MATCHES,
     PAGE_MESSAGES,
     PAGE_METRICS,
@@ -19,6 +20,7 @@ from rentflow.ui.navigation import (
     TENANT_PAGES,
     keep_widget_state,
     logout,
+    show_flash,
 )
 from rentflow.ui.tenant import page_matches, page_profile
 from rentflow.ui.theme import ICON, setup_page
@@ -30,6 +32,7 @@ ROUTES = {
     PAGE_PUBLISH: page_publish,
     PAGE_MESSAGES: page_messages,
     PAGE_METRICS: page_metrics,
+    PAGE_LANDLORD_PROFILE: page_landlord_profile,
 }
 
 
@@ -42,7 +45,7 @@ def ensure_data():
 
 def sidebar(user, pages):
     with st.sidebar:
-        with st.container(border=True):
+        with st.container(border=True, key="carduser"):
             person_header(user)
             st.caption(f"{user['occupation']} · {'Busca habitación' if user['role'] == 'inquilino' else 'Casero'}")
         st.radio("Menú", pages, key="page", label_visibility="collapsed",
@@ -74,4 +77,5 @@ def main():
         st.session_state.page = pages[0]
 
     sidebar(user, pages)
+    show_flash()
     ROUTES[st.session_state.page](user)

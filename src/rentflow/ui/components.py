@@ -30,6 +30,33 @@ def room_facts(room, with_bathroom=False):
     return " · ".join(parts)
 
 
+BIO_MAX = 300
+
+
+def about_fields(user):
+    """Campos «Sobre ti» para usar DENTRO de un st.form. Devuelve los valores para db.update_user.
+
+    El nombre de un perfil verificado no se puede cambiar: anularía la verificación.
+    """
+    st.markdown("#### Sobre ti")
+    c1, c2 = st.columns([3, 1])
+    name = c1.text_input("Nombre", user["name"], max_chars=60, disabled=bool(user["verified"]),
+                         help="Tu perfil está verificado: el nombre no se puede cambiar." if user["verified"] else None)
+    age = c2.number_input("Edad", 18, 99, int(user["age"] or 24))
+    c1, c2 = st.columns(2)
+    is_tenant = user["role"] == "inquilino"
+    occupation = c1.text_input("¿A qué te dedicas?" if is_tenant else "Ocupación", user["occupation"] or "",
+                               max_chars=80, placeholder="Consultora, Erasmus en la UC3M…")
+    origin = c2.text_input("¿De dónde eres?", user["origin"] or "", max_chars=60)
+    bio = st.text_area(
+        "Descripción", user["bio"] or "", max_chars=BIO_MAX, height=90,
+        placeholder=("Cuéntales a tus futuros compañeros cómo eres: aficiones, rutina, qué buscas en un piso…"
+                     if is_tenant else "Preséntate a los inquilinos: cómo gestionas el piso, cómo respondes…"),
+    )
+    return {"name": (name or "").strip() or user["name"], "age": int(age), "occupation": occupation.strip(),
+            "origin": origin.strip(), "bio": bio.strip()}
+
+
 def room_photo(room, key, caption=None):
     """Foto de la habitación (o la imagen de reserva) en un contenedor con `key` para el CSS.
 

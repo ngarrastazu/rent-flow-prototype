@@ -191,6 +191,12 @@ def create_user(name, age, role, occupation, origin, bio="", verified=0):
     )
 
 
+def update_user(user_id, name, age, occupation, origin, bio):
+    """Actualiza los datos personales del perfil (no cambia el rol ni la verificación)."""
+    execute("UPDATE users SET name = ?, age = ?, occupation = ?, origin = ?, bio = ? WHERE id = ?",
+            (name, age, occupation, origin, bio, user_id))
+
+
 def get_preferences(user_id):
     p = query_one("SELECT * FROM preferences WHERE user_id = ?", (user_id,))
     if p:

@@ -6,6 +6,7 @@ import streamlit as st
 
 from rentflow import db, matching
 from rentflow.ui.components import (
+    about_fields,
     habit_line,
     person_header,
     rating_line,
@@ -15,7 +16,7 @@ from rentflow.ui.components import (
     verified_badge,
 )
 from rentflow.ui.maps import LAYER_ID, rooms_deck
-from rentflow.ui.navigation import PAGE_MATCHES, PAGE_MESSAGES, PAGE_PROFILE, go
+from rentflow.ui.navigation import PAGE_MATCHES, PAGE_MESSAGES, PAGE_PROFILE, flash, go
 from rentflow.ui.theme import ICON, badges, empty_state, review_html, score_block
 
 PAGE_SIZE = 10  # tarjetas por tanda en la vista de lista ("Ver más" añade otras tantas)
@@ -130,7 +131,7 @@ def filter_bar(user, all_results):
 def match_card(r):
     room = r["room"]
     landlord = db.get_user(room["landlord_id"])
-    with st.container(border=True):
+    with st.container(border=True, key=f"card{room['id']}"):
         c0, c1, c2, c3 = st.columns([1.2, 1.2, 3.5, 1.1], vertical_alignment="center")
         with c0:
             score_block(r["score"], size=32)
@@ -162,12 +163,12 @@ def matches_map(results):
     chosen = next((r for r in results if picked and r["room"]["id"] == picked[0]["id"]), None)
     with right:
         if not chosen:
-            with st.container(border=True):
+            with st.container(border=True, key="cardmaphint"):
                 st.markdown("**Pulsa un punto del mapa** para ver la habitación.")
                 st.caption("El número es la compatibilidad. Ubicación aproximada por barrio.")
             return
         room = chosen["room"]
-        with st.container(border=True):
+        with st.container(border=True, key="cardmapsel"):
             room_photo(room, key=f"thumbmap{room['id']}")
             score_block(chosen["score"], size=32)
             st.markdown(f"**{room['title']}**")
@@ -209,7 +210,7 @@ def room_detail(user, prefs, room_id):
             st.caption("Todavía no vive nadie más: serías el primero.")
         cols = st.columns(2) if len(mates) > 1 else [st.container()]
         for i, (m, p) in enumerate(zip(mates, mates_prefs, strict=True)):
-            with cols[i % len(cols)], st.container(border=True):
+            with cols[i % len(cols)], st.container(border=True, key=f"cardmate{m['id']}"):
                 person_header(m, f", {m['age']}")
                 st.caption(f"{m['occupation']} · de {m['origin']}")
                 if m["bio"]:
@@ -219,7 +220,7 @@ def room_detail(user, prefs, room_id):
                 rating_line(m["id"])
 
         st.subheader("Casero")
-        with st.container(border=True):
+        with st.container(border=True, key="cardlandlord"):
             person_header(landlord)
             if landlord["bio"]:
                 st.caption(landlord["bio"])
@@ -267,12 +268,14 @@ def contact(user, room):
 
 def page_profile(user):
     st.title("Mi perfil y hábitos")
-    st.caption("Con esto calculamos tu compatibilidad con cada piso y sus compañeros.")
+    st.caption("Tu presentación la ven caseros y compañeros; tus hábitos sirven para calcular la compatibilidad.")
     p = db.get_preferences(user["id"]) or {
         "budget_min": 400, "budget_max": 600, "zones": [], "move_in": date.today().isoformat(),
         "schedule": db.SCHEDULES[1], "cleanliness": 3, "noise": 2, "smokes": 0, "pets": 0, "own_bathroom": 0}
 
     with st.container(key="narrow"), st.form("prefs"):
+        about = about_fields(user)
+
         st.markdown("#### Qué buscas")
         budget = st.slider("Presupuesto (€/mes)", 300, 1200, (p["budget_min"], p["budget_max"]), step=25)
         zones = st.multiselect("Zonas", db.ZONES, default=p["zones"], placeholder="Cualquier zona")
@@ -290,7 +293,9 @@ def page_profile(user):
         pets = c2.checkbox("Tengo mascota", bool(p["pets"]))
 
         if st.form_submit_button("Guardar y ver mis matches", type="primary"):
+            db.update_user(user["id"], **about)
             db.save_preferences(user["id"], budget[0], budget[1], zones, move_in.isoformat(), schedule,
                                 cleanliness, noise, smokes, pets, own_bathroom)
+            flash("Perfil guardado")
             st.session_state._goto = PAGE_MATCHES  # el menú ya está dibujado: se cambia en la siguiente ejecución
             st.rerun()

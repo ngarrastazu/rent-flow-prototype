@@ -12,6 +12,7 @@ PAGE_MY_ROOMS = "Mis habitaciones"
 PAGE_PUBLISH = "Publicar habitación"
 PAGE_MESSAGES = "Mensajes"
 PAGE_METRICS = "Métricas (equipo)"
+PAGE_LANDLORD_PROFILE = "Mi perfil"
 
 # Icono Material de cada página en el menú (sin emojis: DESIGN.md §9)
 PAGE_ICONS = {
@@ -21,6 +22,7 @@ PAGE_ICONS = {
     PAGE_PUBLISH: ":material/add_home:",
     PAGE_MESSAGES: ":material/chat:",
     PAGE_METRICS: ":material/insights:",
+    PAGE_LANDLORD_PROFILE: ":material/person:",
 }
 
 # Estado de widgets que debe sobrevivir al salir y volver a la página (filtros de "Mis matches").
@@ -28,7 +30,7 @@ PAGE_ICONS = {
 PERSISTENT_KEYS = ("f_price", "f_zones", "f_bath", "f_sort", "f_view")
 
 TENANT_PAGES = [PAGE_MATCHES, PAGE_PROFILE, PAGE_MESSAGES, PAGE_METRICS]
-LANDLORD_PAGES = [PAGE_MY_ROOMS, PAGE_PUBLISH, PAGE_MESSAGES, PAGE_METRICS]
+LANDLORD_PAGES = [PAGE_MY_ROOMS, PAGE_PUBLISH, PAGE_MESSAGES, PAGE_LANDLORD_PROFILE, PAGE_METRICS]
 
 
 def go(page, **state):
@@ -43,6 +45,16 @@ def login(user_id):
     user = db.get_user(user_id)
     st.session_state.page = TENANT_PAGES[0] if user["role"] == "inquilino" else LANDLORD_PAGES[0]
     st.session_state.pop("selected_room", None)
+
+
+def flash(message):
+    """Mensaje breve que se muestra (como aviso emergente) en la siguiente ejecución, tras un st.rerun()."""
+    st.session_state._flash = message
+
+
+def show_flash():
+    if msg := st.session_state.pop("_flash", None):
+        st.toast(msg, icon=":material/check_circle:")
 
 
 def keep_widget_state():

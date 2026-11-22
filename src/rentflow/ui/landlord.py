@@ -4,8 +4,8 @@ from datetime import date
 import streamlit as st
 
 from rentflow import db, matching
-from rentflow.ui.components import room_badges, room_facts, room_photo
-from rentflow.ui.navigation import PAGE_MESSAGES, PAGE_PUBLISH, go
+from rentflow.ui.components import about_fields, room_badges, room_facts, room_photo
+from rentflow.ui.navigation import PAGE_MESSAGES, PAGE_PUBLISH, flash, go
 from rentflow.ui.theme import ICON, badges, empty_state, score_style
 
 
@@ -27,7 +27,7 @@ def page_my_rooms(user):
 def room_card(room):
     mates = db.roommates(room["id"])
     interested = db.interested_in(room["id"])
-    with st.container(border=True):
+    with st.container(border=True, key=f"cardroom{room['id']}"):
         photo_col, head_col = st.columns([1, 5], vertical_alignment="center")
         with photo_col:
             room_photo(room, key=f"thumbll{room['id']}")
@@ -43,12 +43,15 @@ def room_card(room):
             candidates = matching.candidates_for(room["id"])
             if not candidates:
                 st.caption("Nadie que busque piso encaja ahora mismo.")
+            lines = []
             for cand in candidates:
                 t = cand["tenant"]
                 _, label = score_style(cand["score"])
                 check = " ✓" if t["verified"] else ""
-                st.caption(f"**{cand['score']} %** {label.lower()} · {t['name']}{check}, {t['age']} · "
-                           f"{t['occupation']}")
+                lines.append(f"**{cand['score']} %** {label.lower()} · {t['name']}{check}, {t['age']} · "
+                             f"{t['occupation']}")
+            if lines:  # un solo bloque con saltos de línea: lista compacta, sin hueco entre filas
+                st.caption("  \n".join(lines))
         with c2:
             st.markdown(f"###### Interesados que te han escrito · {len(interested)}")
             if not interested:
@@ -91,3 +94,14 @@ def page_publish(user):
                                available.isoformat(), smoking, pets, description,
                                photo.getvalue() if photo else None, members)
                 st.success("¡Publicada! Ya aparece en los matches de los inquilinos compatibles.")
+
+
+def page_landlord_profile(user):
+    st.title("Mi perfil")
+    st.caption("Es lo que ven los inquilinos en la ficha de tus habitaciones, junto a tus reseñas.")
+    with st.container(key="narrow"), st.form("landlord_profile"):
+        about = about_fields(user)
+        if st.form_submit_button("Guardar perfil", type="primary"):
+            db.update_user(user["id"], **about)
+            flash("Perfil guardado")
+            st.rerun()  # para que la barra lateral muestre los datos nuevos

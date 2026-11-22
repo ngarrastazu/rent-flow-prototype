@@ -7,7 +7,7 @@ Prototipo funcional de **RentFlow** (proyecto académico de ICAI): web de matchi
 1. **El match Mario ↔ Chamberí debe dar 94 % y salir el primero.** Aparece en el pitch. No cambies `WEIGHTS`, los filtros, `seed.py` ni los datos de Mario/Lucía/Tom sin pasar `uv run pytest` (lo comprueba `test_mario_first_match_is_chamberi_94`).
 2. **Capas:** la interfaz (`app.py`, `src/rentflow/ui/`) no escribe SQL → toda consulta es una función en `db.py`. `matching.py`, `db.py` y `seed.py` no importan Streamlit.
 3. **Interfaz en español** (tuteando, frases cortas). Código e identificadores en inglés; comentarios y docstrings en español.
-4. **Nada de login real, contraseñas, pagos ni datos sensibles.** Nada de fotos ni datos de personas reales. `data/rentflow.db` no se versiona.
+4. **Nada de login real, contraseñas, pagos ni datos sensibles.** Nada de fotos ni datos de personas reales: las fotos de habitaciones solo con licencia libre, **sin personas** y con crédito en `assets/rooms/CREDITS.md`. `data/rentflow.db` no se versiona.
 5. **El matching compara hábitos, nunca identidad:** prohibido filtrar o puntuar por origen, etnia, religión, etc. Una opción tipo "solo chicas" requiere revisión legal antes.
 6. Si añades una funcionalidad que valida una hipótesis, **registra su evento** con `db.log_event` y muéstralo en Métricas (§7).
 7. Es una web para enseñar en ordenador: no la conviertas en app móvil.
@@ -29,7 +29,8 @@ uv add <paquete>                 # nueva dependencia (actualiza pyproject.toml y
 - El código es un paquete instalable (`src/rentflow/`, backend `uv_build`); `uv sync` lo instala en modo editable, así que los imports son siempre `from rentflow import db` / `from rentflow.ui.x import y`, nunca `import db`.
 - La primera ejecución de la app crea `data/rentflow.db` y llama a `seed.seed()` si está vacía. La ruta se puede cambiar con la variable de entorno `RENTFLOW_DB_PATH`.
 - `requirements.txt` solo existe como alternativa para quien no use uv (`pip install -r requirements.txt`, incluye `-e .`). Si cambias dependencias, mantenlo alineado con `pyproject.toml`.
-- Streamlit `>=1.50,<2` (instalada: 1.67). Usamos `st.container(border=True)`, `vertical_alignment`, `st.toggle`, `st.chat_message`, `st.chat_input` y **`width="stretch"`** (no uses `use_container_width`, está obsoleto).
+- Streamlit `>=1.50,<2` (instalada: 1.67). Usamos `st.container(border=True, key=…)`, `vertical_alignment`, `st.toggle`, `st.segmented_control`, `st.chat_message`, `st.chat_input`, `st.pydeck_chart` (con `on_select`), `st.toast` y **`width="stretch"`** (no uses `use_container_width`, está obsoleto).
+- **Necesita internet** para el fondo del mapa (Carto) y las fuentes (Google Fonts). Sin conexión la app funciona, pero el mapa sale sin calles y el texto con la fuente del sistema.
 
 ### Antes de dar algo por terminado
 
@@ -53,14 +54,15 @@ rent-flow-prototype/
 │       ├── maps.py         # mapa de habitaciones con pydeck (puntos con % y color de compatibilidad)
 │       ├── router.py       # setup_page(), carga inicial de datos, barra lateral, ROUTES y main()
 │       ├── navigation.py   # constantes PAGE_* y PAGE_ICONS, menús por rol, go(), login(), logout(), DEMO_USER
-│       ├── components.py   # piezas de personas y pisos: verified_badge, room_facts, room_badges, person_header…
+│       ├── components.py   # piezas de personas y pisos: verified_badge, room_facts, room_photo, about_fields…
 │       ├── landing.py      # entrada: probar como Mario, entrar, crear cuenta
 │       ├── tenant.py       # Mis matches (filtros, lista/mapa, «Ver más»), ficha, Mi perfil y hábitos
-│       ├── landlord.py     # Mis habitaciones (búsqueda inversa), Publicar habitación
+│       ├── landlord.py     # Mis habitaciones (búsqueda inversa), Publicar habitación, Mi perfil (casero)
 │       ├── messages.py     # chat y valoraciones (ambos roles)
 │       └── metrics.py      # métricas del equipo y "Reiniciar datos de la demo"
-├── tests/                  # pytest: algoritmo + demo (test_matching.py), UI con AppTest (test_app.py),
-│                           #         reglas de diseño (test_design.py: sin emojis, logos presentes, rangos)
+├── tests/                  # pytest: algoritmo, filtros, datos de la demo y 94 % (test_matching.py);
+│                           #   flujo de la UI con AppTest: demo, filtros/mapa, edición de perfil (test_app.py);
+│                           #   reglas de diseño: sin emojis, logos, rangos de color, créditos de fotos (test_design.py)
 ├── assets/                 # logos de marca: png/ y svg/ × horizontal, vertical, isotipo, icono-app
 │   └── rooms/              # 12 fotos de ejemplo (Wikimedia Commons, sin personas) + CREDITS.md + placeholder.jpg
 ├── docs/DESIGN.md          # guía visual (marca, color, tipografía, componentes, pantallas)
@@ -132,6 +134,7 @@ El desglose se muestra en "Por qué este match". Si añades un factor, añádelo
 - Streamlit **borra el estado de un widget que no se dibuja** (p. ej. los filtros al abrir una ficha). Las claves que deben sobrevivir van en `navigation.PERSISTENT_KEYS`; `keep_widget_state()` las re-asigna al principio de cada ejecución.
 - Widgets con `key`: inicializa el valor en `st.session_state` antes de dibujarlos y **no** pases `value=` a la vez (Streamlit avisa del conflicto).
 - El usuario de la demo se busca con `db.find_user_by_name(DEMO_USER)`.
+- Avisos tras guardar: `navigation.flash("…")` antes de `st.rerun()`; `router.main()` lo muestra como `st.toast` en la ejecución siguiente.
 
 ### Estilo (detalle completo en `docs/DESIGN.md`)
 - Precios `650 €/mes`, porcentajes `94 %` (con espacio), decimales con coma en las valoraciones (`4,5`), fechas ISO.
@@ -142,6 +145,9 @@ El desglose se muestra en "Por qué este match". Si añades un factor, añádelo
 - **Un solo `type="primary"` por pantalla**; el resto secundarios o `type="tertiary"` (volver, cerrar sesión, abrir chat).
 - Contenedores con estilo propio vía `key` → clase CSS `.st-key-<key>`: `hero` (banda violeta de portada), `narrow` (formularios de ~760 px), `sticky` (columna del match fija), `empty`, `filters` (barra de filtros), `roomphoto` (foto 16:9 de la ficha) y cualquier `thumb…` (miniatura 3:2 recortada). Fotos siempre con `components.room_photo(room, key)`.
 - **pydeck:** cualquier texto en los parámetros de una capa se interpreta como expresión. Los literales van entre comillas simples dentro de la cadena (`radius_units="'pixels'"`, `get_text_anchor="'middle'"`). El mapa base es de Carto y necesita internet.
+- **Espaciado** (en `theme.inject_css`): 10 px entre elementos de la página y 5 px dentro de las tarjetas. Las tarjetas se marcan con un `key` que empieza por `card` (`st.container(border=True, key="card…")`). Entre párrafos de un mismo bloque hay 0,35rem. Streamlit pone `margin-bottom: -1rem` a los bloques de texto y el CSS lo anula; no lo reintroduzcas o el texto se solapará con el elemento siguiente.
+- Varias líneas cortas seguidas (p. ej. una lista de candidatos) van en **un solo** `st.caption` con saltos `"  \n"`, no en un `st.caption` por línea, para que no se separen con el hueco entre elementos.
+- El aviso de Streamlit «Press Enter to submit form» está oculto (`InputInstructions`): se solapaba con el texto.
 - Los selectores `data-testid` del CSS son de Streamlit 1.67: si al actualizar Streamlit algo deja de aplicarse, revísalos con el inspector del navegador.
 - Cualquier HTML con datos de usuario se escapa (`html.escape`).
 - Selectores de usuarios u objetos: **ids** como opciones + `format_func` con el nombre (nunca etiquetas como claves de un dict).
@@ -150,8 +156,10 @@ El desglose se muestra en "Por qué este match". Si añades un factor, añádelo
 ### Pantallas
 - **Entrada:** banda violeta con el logo en negativo y el lema; "Probar como Mario (demo)" (único botón violeta), entrar como cualquier usuario, crear cuenta (un inquilino nuevo va directo a su perfil).
 - **Inquilino:** Mis matches (barra de filtros, contador «N de M», vista Lista con fotos y «Ver más» o vista Mapa con resumen al pulsar un punto) → ficha de la habitación (foto, compañeros, casero, reseñas, desglose, contactar, mini mapa) · Mi perfil y hábitos · Mensajes · Métricas.
-- **Casero:** Mis habitaciones (búsqueda inversa + interesados) · Publicar habitación · Mensajes · Métricas.
+- **Casero:** Mis habitaciones (búsqueda inversa + interesados) · Publicar habitación · Mensajes · Mi perfil · Métricas.
+- **Perfil (ambos roles):** bloque «Sobre ti» (`components.about_fields`, dentro de un `st.form`): edad, ocupación, de dónde eres y descripción (máx. 300 caracteres). El inquilino lo tiene en «Mi perfil y hábitos» junto a sus hábitos; el casero, en «Mi perfil». Se guarda con `db.update_user`, que no toca el rol, la verificación ni los hábitos. **El nombre de un perfil verificado no se puede editar** (anularía la verificación).
 - **Mensajes:** selector de conversación, chat, valorar a otro participante.
+- **Métricas (equipo):** fila de hipótesis (ven matches, abren reseñas I12, contactan I9, mensajes), fila «Exploración de la oferta · I11» (usan filtros, abren el mapa, abren una ficha), últimas acciones y «Reiniciar datos de la demo».
 
 ## Datos de ejemplo (`seed.py`)
 
@@ -161,6 +169,7 @@ El desglose se muestra en "Por qué este match". Si añades un factor, añádelo
 - Volumen: 51 inquilinos (20 buscan, 28 + Lucía y Tom viven en pisos, + Mario), 8 caseros, 30 habitaciones.
 - Precios realistas por zona en `ZONE_PRICE` (€/mes): Usera la más barata, Salamanca la más cara.
 - Nombres y orígenes variados (españoles y Erasmus), todos ficticios.
+- Las 12 fotos son de Wikimedia Commons y de pisos de **otros países**: son ilustrativas, no se presentan como oferta real de Madrid. Varias son CC BY / CC BY-SA: si la app se publica, hay que enlazar `CREDITS.md` desde un sitio visible.
 
 ## Métricas e hipótesis
 
@@ -200,9 +209,21 @@ Estado tras las entrevistas: validadas I1–I7, I9, I10, I12, I13, C1, C2, C4, C
 
 ## Siguientes pasos (por prioridad)
 
-1. Panel del casero con el modelo de cobro elegido (comisión frente a cuota fija) para el piloto, sin cobrar de verdad.
-2. Mantenimiento **para caseros** (aviso de averías desde el chat).
-3. Aprender los pesos con las reseñas de convivencia tras un mes (sustituir `WEIGHTS` fijos).
-4. Encuesta de convivencia al mes de entrar (métrica de **I10**: ≥ 70 % puntúa 4/5 o más).
+1. Publicar el prototipo en una URL (Streamlit Community Cloud) para probarlo con usuarios reales. SQLite allí se borra al
+   reiniciar: para conservar métricas haría falta una base externa (Supabase/Neon).
+2. Alertas de búsqueda inversa: al publicar una habitación, aviso en la app a los inquilinos compatibles (evento nuevo).
+3. Doble aceptación: los compañeros del piso aceptan o rechazan al candidato antes de la visita (mide mejor **I9**).
+4. Agendar la visita desde el chat (proponer hueco y aceptar).
+5. Panel del casero con el modelo de cobro elegido (comisión frente a cuota fija) para el piloto, sin cobrar de verdad (**C6**).
+6. Encuesta de convivencia al mes de entrar (métrica de **I10**: ≥ 70 % puntúa 4/5 o más).
+7. Mantenimiento **para caseros** (aviso de averías desde el chat).
+8. Aprender los pesos con las reseñas de convivencia tras un mes (sustituir `WEIGHTS` fijos).
+
+**IA: descartada para la demo por ahora** (decisión del equipo, noviembre de 2026). Si se retoma: la IA solo traduce texto
+a filtros/preferencias con un esquema fijo de hábitos y explica el match; nunca decide ni cambia la puntuación (el 94 % y la
+regla 5 se mantienen). Ollama en el portátil del equipo (i7-8550U, 12 GB, sin GPU útil) solo da para modelos de ~3B y
+respuestas de 3–8 s. Las suscripciones de 20 € (Claude Pro, Google AI Pro) **no** incluyen API: haría falta la API de pago
+por uso de Anthropic o la de Gemini (con nivel gratuito). Diseño previsto: un `ai.py` sin Streamlit con proveedor
+intercambiable y respaldo sin IA.
 
 Deuda técnica conocida (aceptable para el prototipo): `matches_for` hace una consulta por habitación y compañero (N+1); con más de unos cientos de pisos convendría cargar todo en bloque.

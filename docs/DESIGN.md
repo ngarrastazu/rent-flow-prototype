@@ -262,6 +262,8 @@ La banda de la portada usa `night` `#0D0638` o `violet` `#4B02F2` con el logo en
 ## 9. Espaciado y forma
 
 - Escala de espaciado: 4, 8, 12, 16, 24, 32, 48 px.
+- Densidad (compacta, sin que el texto se toque): **10 px** entre elementos de una página, **5 px** entre elementos dentro de una tarjeta y **~6 px** entre párrafos de un mismo bloque. Las listas de líneas cortas van en un solo bloque.
+- Los subtítulos de sección de un formulario («Qué buscas», «Cómo vives») llevan ~10 px extra por encima.
 - Radio de esquinas: 16 px tarjetas y fotos, 10 px botones y campos, 999 px insignias.
 - Bordes de 1 px en `line`. Sin sombras, salvo una muy suave en los iconos de app.
 - Iconos: NO debe de haber emojis en la aplicación.

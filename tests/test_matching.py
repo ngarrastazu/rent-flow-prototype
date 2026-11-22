@@ -119,3 +119,11 @@ def test_room_coords_are_deterministic_and_near_zone():
 
 def test_seed_rooms_have_photos(seeded_db):
     assert all(r["photo"] for r in db.active_rooms())
+
+
+def test_update_user_keeps_role_and_verification(seeded_db):
+    db.update_user(1, "Mario Rossi", 28, "Analista de riesgos", "Milán", "Nueva bio")
+    u = db.get_user(1)
+    assert (u["age"], u["occupation"], u["bio"]) == (28, "Analista de riesgos", "Nueva bio")
+    assert u["role"] == "inquilino" and u["verified"] == 1
+    assert matching.matches_for(1)[0]["score"] == 94  # editar el perfil no toca los hábitos

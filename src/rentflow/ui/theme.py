@@ -73,18 +73,31 @@ h1, h2, h3, h4, h5 {{ letter-spacing: -0.02em; color: {INK}; }}
 [data-testid="stMainBlockContainer"], .block-container {{
   padding-top: 2.25rem; padding-bottom: 2rem; max-width: 1280px;
 }}
-[data-testid="stVerticalBlock"] {{ gap: 0.75rem; }}
-h1 {{ font-size: 32px !important; padding: 0 0 0.15rem !important; line-height: 1.15; }}
-h2 {{ font-size: 22px !important; padding: 0.5rem 0 0.1rem !important; }}
-h3, h4 {{ font-size: 18px !important; padding: 0.25rem 0 0.35rem !important; }}
-h5 {{ font-size: 15px !important; padding: 0.25rem 0 0 !important; color: {INK_MUTED}; text-transform: none; }}
+[data-testid="stVerticalBlock"] {{ gap: 0.625rem; }}  /* 10 px entre elementos: compacto y uniforme */
+/* Streamlit compensa el margen de los párrafos con -1rem en el contenedor; si no se anula, el texto
+   se solapa con el elemento siguiente. Se anula y se deja un espacio mínimo fijo entre párrafos. */
+[data-testid="stMarkdownContainer"], [data-testid="stCaptionContainer"] {{ margin-bottom: 0 !important; }}
+[data-testid="stMarkdownContainer"] p, [data-testid="stCaptionContainer"] p {{ margin: 0 0 0.35rem; }}
+[data-testid="stMarkdownContainer"] p:last-child,
+[data-testid="stCaptionContainer"] p:last-child {{ margin-bottom: 0; }}
+[data-testid="stMarkdownContainer"] ul, [data-testid="stMarkdownContainer"] ol {{ margin-bottom: 0; }}
+[data-testid="InputInstructions"] {{ display: none; }}  /* «Press Enter to submit form» se solapaba con el texto */
+h1 {{ font-size: 32px !important; padding: 0 !important; line-height: 1.15; }}
+h2 {{ font-size: 22px !important; padding: 0.35rem 0 0 !important; }}
+h3, h4 {{ font-size: 18px !important; padding: 0.15rem 0 0 !important; line-height: 1.3; }}
+h4 {{ padding-top: 0.6rem !important; }}  /* secciones de formulario: separadas de lo anterior */
+[class*="st-key-card"] h4 {{ padding-top: 0.15rem !important; }}
+h5 {{ font-size: 15px !important; padding: 0.1rem 0 0 !important; color: {INK_MUTED}; text-transform: none; }}
 [data-testid="stHeaderActionElements"] {{ display: none; }}       /* sin enlaces de ancla en títulos */
 [data-testid="stCaptionContainer"] {{ color: {INK_MUTED}; font-size: 14px; opacity: 1; }}  /* contraste 4,5:1 */
-[data-testid="stCaptionContainer"] p {{ margin-bottom: 0; }}
-hr {{ margin: 0.75rem 0 !important; border-color: {LINE} !important; }}
+hr {{ margin: 0.25rem 0 !important; border-color: {LINE} !important; }}
 [data-testid="stAppDeployButton"], footer {{ display: none; }}
 
 /* ---------- Tarjetas: st.container(border=True) ---------- */
+/* Dentro de una tarjeta (contenedor con key="card…") los elementos van más juntos que en la página */
+[class*="st-key-card"][data-testid="stVerticalBlock"],
+[class*="st-key-card"] [data-testid="stVerticalBlock"] {{ gap: 0.3rem; }}
+[class*="st-key-card"] [data-testid="stHorizontalBlock"] {{ gap: 0.75rem; }}
 [data-testid="stVerticalBlockBorderWrapper"], [data-testid="stVerticalBlock"][class*="border"] {{
   border-radius: 16px; border-color: {LINE}; background: #FFFFFF;
 }}

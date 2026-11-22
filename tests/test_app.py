@@ -50,3 +50,35 @@ def test_filters_and_map_view(tmp_path, monkeypatch):
     assert not at.exception
     from rentflow import db as _db
     assert _db.users_with_event("filtrar") == 1 and _db.users_with_event("ver_mapa") == 1
+
+
+def test_tenant_edits_occupation_and_bio(tmp_path, monkeypatch):
+    at = _app(tmp_path, monkeypatch).run()
+    at.button[0].click().run()  # Mario
+    at.sidebar.radio[0].set_value("Mi perfil y hábitos").run()
+    assert not at.exception
+    name = next(t for t in at.text_input if t.label == "Nombre")
+    assert name.disabled  # verificado: el nombre no se cambia
+    next(t for t in at.text_input if t.label == "¿A qué te dedicas?").set_value("Analista de riesgos")
+    at.text_area[0].set_value("Me gusta cocinar y correr por el Retiro.")
+    next(b for b in at.button if b.label == "Guardar y ver mis matches").click().run()
+    assert not at.exception
+    from rentflow import db as _db
+    mario = _db.get_user(1)
+    assert mario["occupation"] == "Analista de riesgos"
+    assert mario["bio"] == "Me gusta cocinar y correr por el Retiro."
+    assert mario["name"] == "Mario Rossi"
+
+
+def test_landlord_profile_page(tmp_path, monkeypatch):
+    at = _app(tmp_path, monkeypatch).run()
+    from rentflow import db as _db
+    carmen = _db.find_user_by_name("Carmen Ruiz")
+    at.session_state["login_choice"] = carmen["id"]
+    next(b for b in at.button if b.label == "Entrar").click().run()
+    at.sidebar.radio[0].set_value("Mi perfil").run()
+    assert not at.exception
+    at.text_area[0].set_value("Respondo en el día. Las averías, en menos de 48 h.")
+    next(b for b in at.button if b.label == "Guardar perfil").click().run()
+    assert not at.exception
+    assert _db.get_user(carmen["id"])["bio"] == "Respondo en el día. Las averías, en menos de 48 h."
