@@ -4,7 +4,7 @@ from datetime import date
 import streamlit as st
 
 from rentflow import db, matching
-from rentflow.ui.components import room_badges, room_facts
+from rentflow.ui.components import room_badges, room_facts, room_photo
 from rentflow.ui.navigation import PAGE_MESSAGES, PAGE_PUBLISH, go
 from rentflow.ui.theme import ICON, badges, empty_state, score_style
 
@@ -28,10 +28,14 @@ def room_card(room):
     mates = db.roommates(room["id"])
     interested = db.interested_in(room["id"])
     with st.container(border=True):
-        st.markdown(f"**{room['title']}**")
-        st.caption(room_facts(room) + f" · {ICON['mates']} " + (", ".join(m["name"] for m in mates)
-                                                                 or "sin compañeros"))
-        badges(room_badges(room))
+        photo_col, head_col = st.columns([1, 5], vertical_alignment="center")
+        with photo_col:
+            room_photo(room, key=f"thumbll{room['id']}")
+        with head_col:
+            st.markdown(f"**{room['title']}**")
+            st.caption(room_facts(room) + f" · {ICON['mates']} " + (", ".join(m["name"] for m in mates)
+                                                                     or "sin compañeros"))
+            badges(room_badges(room))
 
         c1, c2 = st.columns([2, 1], gap="medium")
         with c1:

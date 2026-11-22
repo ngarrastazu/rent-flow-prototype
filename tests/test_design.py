@@ -28,3 +28,13 @@ def test_score_ranges():
     assert theme.score_style(84) == (theme.BLUE, "Buen match")
     assert theme.score_style(70) == (theme.BLUE, "Buen match")
     assert theme.score_style(69) == (theme.INK_MUTED, "Match posible")
+
+
+def test_room_photos_are_credited():
+    """Cada foto de ejemplo (licencia libre) debe figurar en CREDITS.md con su autor y licencia."""
+    rooms = theme.ASSETS / "rooms"
+    credits = (rooms / "CREDITS.md").read_text(encoding="utf-8")
+    photos = sorted(rooms.glob("room-*.jpg"))
+    assert photos and theme.ROOM_PLACEHOLDER.is_file()
+    for photo in photos:
+        assert f"`{photo.name}`" in credits, photo.name

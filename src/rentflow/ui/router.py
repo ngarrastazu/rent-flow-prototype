@@ -17,6 +17,7 @@ from rentflow.ui.navigation import (
     PAGE_PROFILE,
     PAGE_PUBLISH,
     TENANT_PAGES,
+    keep_widget_state,
     logout,
 )
 from rentflow.ui.tenant import page_matches, page_profile
@@ -54,6 +55,7 @@ def sidebar(user, pages):
 def main():
     setup_page()
     ensure_data()
+    keep_widget_state()
 
     if "user_id" not in st.session_state:
         landing()

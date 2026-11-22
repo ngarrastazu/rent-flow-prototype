@@ -96,10 +96,11 @@ def score_room(prefs: Row, room: Row, mates_prefs: list[Row]) -> tuple[int, dict
     return round(total * 100), breakdown
 
 
-def matches_for(tenant_id: int, limit: int = 10) -> list[dict]:
+def matches_for(tenant_id: int, limit: int | None = 10) -> list[dict]:
     """Habitaciones ordenadas por compatibilidad para un inquilino.
 
     Cada resultado: {"room", "score" (0-100), "breakdown" (factor -> 0..1), "mates"}.
+    `limit=None` devuelve todas las compatibles (para filtrar y paginar en la interfaz).
     """
     prefs = db.get_preferences(tenant_id)
     if not prefs:
@@ -115,6 +116,25 @@ def matches_for(tenant_id: int, limit: int = 10) -> list[dict]:
             results.append({"room": room, "score": score, "breakdown": breakdown, "mates": mates})
     results.sort(key=lambda r: r["score"], reverse=True)
     return results[:limit]
+
+
+SORTS = {
+    "Compatibilidad": lambda r: (-r["score"], r["room"]["price"]),
+    "Precio más bajo": lambda r: (r["room"]["price"], -r["score"]),
+    "Entrada más pronto": lambda r: (r["room"]["available_from"] or "", -r["score"]),
+}
+
+
+def filter_matches(results: list[dict], max_price: int | None = None, zones=None,
+                   own_bathroom: bool = False, sort: str = "Compatibilidad") -> list[dict]:
+    """Filtra y ordena resultados ya puntuados. No recalcula nada: la compatibilidad no cambia."""
+    out = [
+        r for r in results
+        if (max_price is None or r["room"]["price"] <= max_price)
+        and (not zones or r["room"]["zone"] in zones)
+        and (not own_bathroom or r["room"]["own_bathroom"])
+    ]
+    return sorted(out, key=SORTS[sort])
 
 
 def candidates_for(room_id: int, limit: int = 5) -> list[dict]:

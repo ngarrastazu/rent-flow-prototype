@@ -210,6 +210,24 @@ Máximo 3 insignias por tarjeta.
 - **Derecha, fija arriba:** porcentaje grande (56 px), etiqueta del rango, «Por qué este match» con una barra azul por factor y el peso entre paréntesis, y el único botón violeta: «💬 Contactar con el casero y los compañeros».
 - Las reseñas se muestran con `st.toggle`; cada reseña: estrellas en violeta, comentario entre comillas en cursiva y autor en `ink-muted`.
 
+### Fotos de habitaciones
+- Siempre con proporción fija: **3:2** en miniaturas (tarjetas, panel del mapa, casero) y **16:9** en la ficha, recortadas con
+  `object-fit: cover` para que cualquier foto subida encaje. Radio 10 px en miniaturas y 16 px en la ficha.
+- Sin foto: imagen de reserva con el isotipo en violeta suave sobre `surface` (`assets/rooms/placeholder.jpg`).
+- Fotos de ejemplo: solo con licencia libre, **sin personas**, con autor y licencia en `assets/rooms/CREDITS.md`.
+
+### Filtros y vistas («Tus matches»)
+- Barra de filtros sobre `surface` con borde `line`: precio máximo, zonas, baño propio y orden. Etiquetas en 13 px `ink-muted`.
+- Debajo, una línea con el contador («**2** de 15 habitaciones compatibles · con filtros»), «Quitar filtros» (terciario) y
+  el selector **Lista / Mapa** a la derecha.
+- Los filtros nunca cambian la puntuación: solo esconden u ordenan resultados.
+
+### Mapa
+- Fondo claro de Carto, con un punto por habitación: el **número** es la compatibilidad y el **color** sigue §3, así que no
+  depende solo del color.
+- Al pulsar un punto, la columna derecha muestra el resumen (foto, puntuación, datos, insignias y «Ver detalles» secundario).
+- En la ficha, un mini mapa de 170 px con la ubicación aproximada, debajo del botón de contactar.
+
 ### Estrellas
 `★★★★☆ 4,2 (5 reseñas)`: estrellas llenas en `violet`, vacías en `line`. Usa coma decimal.
 

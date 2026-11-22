@@ -4,7 +4,7 @@ from html import escape
 import streamlit as st
 
 from rentflow import db
-from rentflow.ui.theme import ICON, badge, stars_html
+from rentflow.ui.theme import ICON, ROOM_PLACEHOLDER, badge, stars_html
 
 
 def verified_badge(user):
@@ -28,6 +28,16 @@ def room_facts(room, with_bathroom=False):
         parts.append("baño propio" if room["own_bathroom"] else "baño compartido")
     parts.append(f"entrada {room['available_from']}")
     return " · ".join(parts)
+
+
+def room_photo(room, key, caption=None):
+    """Foto de la habitación (o la imagen de reserva) en un contenedor con `key` para el CSS.
+
+    key = "thumb<algo>" -> miniatura 3:2 recortada; key = "roomphoto" -> foto grande 16:9 de la ficha.
+    """
+    with st.container(key=key):
+        st.image(room["photo"] or str(ROOM_PLACEHOLDER), width="stretch",
+                 caption=caption)
 
 
 def room_badges(room):

@@ -85,3 +85,37 @@ def test_seed_is_repeatable(seeded_db):
     before = db.query("SELECT * FROM preferences ORDER BY user_id")
     seed.seed()
     assert db.query("SELECT * FROM preferences ORDER BY user_id") == before
+
+
+# ---------- Filtros, mapa y fotos ----------
+
+def test_filters_do_not_change_scores(seeded_db):
+    allr = matching.matches_for(1, limit=None)
+    assert len(allr) >= 10 and allr[0]["score"] == 94
+    cheap = matching.filter_matches(allr, max_price=600)
+    assert cheap and all(r["room"]["price"] <= 600 for r in cheap)
+    by_id = {r["room"]["id"]: r["score"] for r in allr}
+    assert all(by_id[r["room"]["id"]] == r["score"] for r in cheap)
+
+
+def test_filters_zones_bathroom_and_sort(seeded_db):
+    allr = matching.matches_for(1, limit=None)
+    only = matching.filter_matches(allr, zones=["Chamberí"], own_bathroom=True)
+    assert only[0]["room"]["id"] == 1
+    assert all(r["room"]["zone"] == "Chamberí" and r["room"]["own_bathroom"] for r in only)
+    by_price = matching.filter_matches(allr, sort="Precio más bajo")
+    assert [r["room"]["price"] for r in by_price] == sorted(r["room"]["price"] for r in allr)
+    assert matching.filter_matches(allr, max_price=1) == []
+
+
+def test_room_coords_are_deterministic_and_near_zone():
+    room = {"id": 7, "zone": "Usera"}
+    assert db.room_coords(room) == db.room_coords(room)
+    lat, lon = db.room_coords(room)
+    zlat, zlon = db.ZONE_COORDS["Usera"]
+    assert abs(lat - zlat) < 0.005 and abs(lon - zlon) < 0.006
+    assert set(db.ZONE_COORDS) == set(db.ZONES)
+
+
+def test_seed_rooms_have_photos(seeded_db):
+    assert all(r["photo"] for r in db.active_rooms())

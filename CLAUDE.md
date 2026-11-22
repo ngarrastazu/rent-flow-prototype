@@ -50,17 +50,19 @@ rent-flow-prototype/
 │   ├── seed.py             # datos de ejemplo deterministas (SEED = 42) → `uv run rentflow-seed`
 │   └── ui/                 # interfaz, una pantalla por módulo
 │       ├── theme.py        # identidad visual: rutas de logos, colores, CSS global, puntuación, insignias, estrellas
+│       ├── maps.py         # mapa de habitaciones con pydeck (puntos con % y color de compatibilidad)
 │       ├── router.py       # setup_page(), carga inicial de datos, barra lateral, ROUTES y main()
 │       ├── navigation.py   # constantes PAGE_* y PAGE_ICONS, menús por rol, go(), login(), logout(), DEMO_USER
 │       ├── components.py   # piezas de personas y pisos: verified_badge, room_facts, room_badges, person_header…
 │       ├── landing.py      # entrada: probar como Mario, entrar, crear cuenta
-│       ├── tenant.py       # Mis matches, ficha de la habitación, Mi perfil y hábitos
+│       ├── tenant.py       # Mis matches (filtros, lista/mapa, «Ver más»), ficha, Mi perfil y hábitos
 │       ├── landlord.py     # Mis habitaciones (búsqueda inversa), Publicar habitación
 │       ├── messages.py     # chat y valoraciones (ambos roles)
 │       └── metrics.py      # métricas del equipo y "Reiniciar datos de la demo"
 ├── tests/                  # pytest: algoritmo + demo (test_matching.py), UI con AppTest (test_app.py),
 │                           #         reglas de diseño (test_design.py: sin emojis, logos presentes, rangos)
 ├── assets/                 # logos de marca: png/ y svg/ × horizontal, vertical, isotipo, icono-app
+│   └── rooms/              # 12 fotos de ejemplo (Wikimedia Commons, sin personas) + CREDITS.md + placeholder.jpg
 ├── docs/DESIGN.md          # guía visual (marca, color, tipografía, componentes, pantallas)
 ├── .streamlit/config.toml  # tema de Streamlit: colores de marca y fuentes Inter / Inter Tight
 ├── data/                   # rentflow.db (ignorada por git; solo se versiona .gitkeep)
@@ -69,7 +71,7 @@ rent-flow-prototype/
 └── README.md               # instrucciones y guion de la demo para el equipo
 ```
 
-Dependencias entre módulos (de arriba abajo, nunca al revés): `app.py` → `ui/router` → pantallas (`landing`, `tenant`, `landlord`, `messages`, `metrics`) → `ui/navigation` + `ui/components` → `ui/theme` → `matching` → `db`. Las pantallas no se importan entre sí: comparten cosas a través de `navigation`, `components` o `theme`.
+Dependencias entre módulos (de arriba abajo, nunca al revés): `app.py` → `ui/router` → pantallas (`landing`, `tenant`, `landlord`, `messages`, `metrics`) → `ui/navigation` + `ui/components` + `ui/maps` → `ui/theme` → `matching` → `db`. Las pantallas no se importan entre sí: comparten cosas a través de `navigation`, `components` o `theme`.
 
 ## Modelo de datos (`db.py`)
 
@@ -92,6 +94,8 @@ Convenciones:
 - Zonas siempre de `db.ZONES`; horarios siempre de `db.SCHEDULES` (el algoritmo compara cadenas exactas).
 - Si cambias el esquema: actualiza `SCHEMA`, ajusta `seed.py` y regenera con `uv run rentflow-seed`. No hay migraciones.
 - `db.DB_PATH` se lee en cada conexión: los tests lo parchean con `monkeypatch.setattr(db, "DB_PATH", ...)`.
+- **Ubicación:** no hay direcciones. `db.ZONE_COORDS` tiene el centro aproximado de cada zona (debe cubrir todas las de `ZONES`) y `db.room_coords(room)` le suma un desplazamiento fijo según el id (determinista, sin `random`).
+- **Fotos:** `rooms.photo` es un BLOB. El seed carga las de `assets/rooms/`; las subidas por caseros se guardan igual. Sin foto, la interfaz muestra `theme.ROOM_PLACEHOLDER`.
 
 ## Algoritmo de matching (`matching.py`)
 
@@ -109,7 +113,8 @@ Convenciones:
    - Piso sin compañeros: `NO_ROOMMATES_SCORE` (0,8) en esos tres factores.
 3. API pública:
    - `score_room(prefs, room, mates_prefs)` → `(puntuación_0_100, desglose)` o `None`.
-   - `matches_for(tenant_id)` → top 10 habitaciones (`room`, `score`, `breakdown`, `mates`).
+   - `matches_for(tenant_id, limit=10)` → habitaciones ordenadas (`room`, `score`, `breakdown`, `mates`); `limit=None` devuelve todas.
+   - `filter_matches(results, max_price, zones, own_bathroom, sort)` → filtra y ordena **sin recalcular** (la puntuación no cambia). Órdenes en `SORTS`.
    - `candidates_for(room_id)` → top 5 inquilinos que buscan piso (búsqueda inversa del casero).
    - `mates_preferences(mates)` → preferencias de los compañeros (omite los que no tienen perfil).
 
@@ -123,7 +128,9 @@ El desglose se muestra en "Por qué este match". Si añades un factor, añádelo
 - El menú es un `st.radio(key="page")` en la barra lateral, con iconos de `PAGE_ICONS` vía `format_func`; el CSS oculta el círculo y lo pinta como menú.
 - Para cambiar de página **desde un botón** usa el callback `go(page, **estado)` con `on_click` (corre antes de dibujar el menú).
 - **Desde un formulario o código que corre después del menú** no asignes `st.session_state.page` (Streamlit lanza excepción porque el widget ya existe): usa `st.session_state._goto = PAGE_X` y `st.rerun()`; `main()` lo aplica al principio.
-- Estado de sesión: `user_id`, `page`, `_goto`, `selected_room`, `conversation_id`, `logged_matches`, `logged_detail`, `rev<room_id>`. `logout()` lo vacía todo.
+- Estado de sesión: `user_id`, `page`, `_goto`, `selected_room`, `conversation_id`, `logged_matches`, `logged_detail`, `logged_filter`, `logged_map`, `matches_shown`, `rev<room_id>` y los filtros `f_price`, `f_zones`, `f_bath`, `f_sort`, `f_view`. `logout()` lo vacía todo.
+- Streamlit **borra el estado de un widget que no se dibuja** (p. ej. los filtros al abrir una ficha). Las claves que deben sobrevivir van en `navigation.PERSISTENT_KEYS`; `keep_widget_state()` las re-asigna al principio de cada ejecución.
+- Widgets con `key`: inicializa el valor en `st.session_state` antes de dibujarlos y **no** pases `value=` a la vez (Streamlit avisa del conflicto).
 - El usuario de la demo se busca con `db.find_user_by_name(DEMO_USER)`.
 
 ### Estilo (detalle completo en `docs/DESIGN.md`)
@@ -133,7 +140,8 @@ El desglose se muestra en "Por qué este match". Si añades un factor, añádelo
 - Insignias con `badge(texto, "verified" | "brand" | "muted")` y `badges([...])` (máx. 3); verificado = `verified_badge(user)`. Estrellas con `stars_html()` / `rating_line()`; reseñas con `review_html()`.
 - Tarjetas con `st.container(border=True)`; estados vacíos con `empty_state(mensaje, acción)`.
 - **Un solo `type="primary"` por pantalla**; el resto secundarios o `type="tertiary"` (volver, cerrar sesión, abrir chat).
-- Contenedores con estilo propio vía `key` → clase CSS `.st-key-<key>`: `hero` (banda violeta de portada), `narrow` (formularios de ~760 px), `sticky` (columna del match fija), `empty`.
+- Contenedores con estilo propio vía `key` → clase CSS `.st-key-<key>`: `hero` (banda violeta de portada), `narrow` (formularios de ~760 px), `sticky` (columna del match fija), `empty`, `filters` (barra de filtros), `roomphoto` (foto 16:9 de la ficha) y cualquier `thumb…` (miniatura 3:2 recortada). Fotos siempre con `components.room_photo(room, key)`.
+- **pydeck:** cualquier texto en los parámetros de una capa se interpreta como expresión. Los literales van entre comillas simples dentro de la cadena (`radius_units="'pixels'"`, `get_text_anchor="'middle'"`). El mapa base es de Carto y necesita internet.
 - Los selectores `data-testid` del CSS son de Streamlit 1.67: si al actualizar Streamlit algo deja de aplicarse, revísalos con el inspector del navegador.
 - Cualquier HTML con datos de usuario se escapa (`html.escape`).
 - Selectores de usuarios u objetos: **ids** como opciones + `format_func` con el nombre (nunca etiquetas como claves de un dict).
@@ -141,14 +149,15 @@ El desglose se muestra en "Por qué este match". Si añades un factor, añádelo
 
 ### Pantallas
 - **Entrada:** banda violeta con el logo en negativo y el lema; "Probar como Mario (demo)" (único botón violeta), entrar como cualquier usuario, crear cuenta (un inquilino nuevo va directo a su perfil).
-- **Inquilino:** Mis matches → ficha de la habitación (compañeros, casero, reseñas, desglose, contactar) · Mi perfil y hábitos · Mensajes · Métricas.
+- **Inquilino:** Mis matches (barra de filtros, contador «N de M», vista Lista con fotos y «Ver más» o vista Mapa con resumen al pulsar un punto) → ficha de la habitación (foto, compañeros, casero, reseñas, desglose, contactar, mini mapa) · Mi perfil y hábitos · Mensajes · Métricas.
 - **Casero:** Mis habitaciones (búsqueda inversa + interesados) · Publicar habitación · Mensajes · Métricas.
 - **Mensajes:** selector de conversación, chat, valorar a otro participante.
 
 ## Datos de ejemplo (`seed.py`)
 
 - Deterministas: `seed()` llama a `random.seed(SEED)` **al empezar**, así "Reiniciar datos de la demo" genera exactamente lo mismo que la primera carga (lo comprueba `test_seed_is_repeatable`). Si cambias el orden de las llamadas a `random`, cambian todos los datos: pasa los tests.
-- Mario es siempre el usuario 1 y su habitación de Chamberí la habitación 1.
+- Mario es siempre el usuario 1 y su habitación de Chamberí la habitación 1 (con la foto `room-01.jpg`).
+- Las fotos se asignan **por orden** (`room_photo(i)`), sin `random`, para no alterar el resto de datos. Si añades fotos a `assets/rooms/`, añade su línea en `CREDITS.md` (lo comprueba `test_room_photos_are_credited`) y usa solo fotos con licencia libre y **sin personas**.
 - Volumen: 51 inquilinos (20 buscan, 28 + Lucía y Tom viven en pisos, + Mario), 8 caseros, 30 habitaciones.
 - Precios realistas por zona en `ZONE_PRICE` (€/mes): Usera la más barata, Salamanca la más cara.
 - Nombres y orígenes variados (españoles y Erasmus), todos ficticios.
@@ -165,6 +174,8 @@ Cada acción relevante se guarda con `db.log_event(user_id, kind, room_id)` y se
 | `contactar` | Pulsa "Contactar" (solo la primera vez por habitación) | **I9**: aceptan un compañero sugerido (objetivo ≥ 50 %) |
 | `mensaje` | Envía un mensaje en el chat | Chat en la app frente a WhatsApp (objetivo ≥ 60 % de conversaciones dentro) |
 | `resena` | Envía una valoración | Base de la confianza y del "data moat" |
+| `filtrar` | Primera vez por sesión que aplica un filtro en «Mis matches» | **I11**: ¿exploran la oferta más allá del top? |
+| `ver_mapa` | Primera vez por sesión que abre la vista de mapa | **I11** |
 
 Estado tras las entrevistas: validadas I1–I7, I9, I10, I12, I13, C1, C2, C4, C5; por poco I8; **no validadas I11** (matching frente a Badi: valoran más el volumen de pisos), **I14** (mantenimiento para inquilinos) y **C6** (comisión a caseros). Consecuencias:
 - La oferta de pisos importa tanto como el algoritmo: no escondas habitaciones con filtros demasiado estrictos.
@@ -189,11 +200,9 @@ Estado tras las entrevistas: validadas I1–I7, I9, I10, I12, I13, C1, C2, C4, C
 
 ## Siguientes pasos (por prioridad)
 
-1. Filtros en "Mis matches" (precio, zona, baño propio) sin recalcular el perfil.
-2. Mapa de habitaciones por zona (`st.map` con coordenadas aproximadas de cada barrio).
-3. Panel del casero con el modelo de cobro elegido (comisión frente a cuota fija) para el piloto, sin cobrar de verdad.
-4. Mantenimiento **para caseros** (aviso de averías desde el chat).
-5. Aprender los pesos con las reseñas de convivencia tras un mes (sustituir `WEIGHTS` fijos).
-6. Encuesta de convivencia al mes de entrar (métrica de **I10**: ≥ 70 % puntúa 4/5 o más).
+1. Panel del casero con el modelo de cobro elegido (comisión frente a cuota fija) para el piloto, sin cobrar de verdad.
+2. Mantenimiento **para caseros** (aviso de averías desde el chat).
+3. Aprender los pesos con las reseñas de convivencia tras un mes (sustituir `WEIGHTS` fijos).
+4. Encuesta de convivencia al mes de entrar (métrica de **I10**: ≥ 70 % puntúa 4/5 o más).
 
 Deuda técnica conocida (aceptable para el prototipo): `matches_for` hace una consulta por habitación y compañero (N+1); con más de unos cientos de pisos convendría cargar todo en bloque.

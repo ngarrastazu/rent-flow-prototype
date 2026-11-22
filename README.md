@@ -20,6 +20,7 @@ con datos de ejemplo: 51 inquilinos, 8 caseros y 30 habitaciones en Madrid.
 
 1. Pulsa **Probar como Mario (demo)**.
 2. **Mis matches**: su primer resultado es la habitación de Chamberí con un **94 %** de compatibilidad.
+   Prueba los filtros (precio, zona, baño propio) y cambia a **Mapa**: pulsa un punto para ver su resumen.
 3. **Ver detalles**: compañeros (Lucía y Tom) con sus hábitos, el casero verificado y el desglose
    "Por qué este match". Activa **Ver reseñas**.
 4. **Contactar**: se abre el chat con el casero y los compañeros.
@@ -41,7 +42,7 @@ Tests: `uv run pytest` (comprueban, entre otras cosas, que el match de Mario sig
 | `src/rentflow/db.py` | Esquema SQLite y funciones de acceso a datos |
 | `src/rentflow/seed.py` | Datos de ejemplo de Madrid (semilla fija: siempre los mismos) |
 | `tests/` | Tests con pytest (algoritmo, datos de la demo e interfaz) |
-| `assets/` | Logos de la marca (PNG y SVG) |
+| `assets/` | Logos de la marca (PNG y SVG) y fotos de ejemplo de habitaciones (`assets/rooms/`, con créditos) |
 | `docs/DESIGN.md` | Guía visual: colores, tipografía, componentes y pantallas |
 | `.streamlit/config.toml` | Tema de Streamlit con los colores y fuentes de la marca |
 | `data/` | La base de datos local (no se sube a git) |

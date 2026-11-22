@@ -25,6 +25,17 @@ def page_metrics(_user=None):
     c4.metric("Mensajes", msgs, border=True, help="Chat en la app frente a WhatsApp · objetivo ≥ 60 %")
     st.caption("Objetivos: reseñas ≥ 60 % (I12) · contacto ≥ 50 % (I9) · conversaciones dentro de la app ≥ 60 %.")
 
+    st.markdown("##### Exploración de la oferta · I11")
+    c1, c2, c3, _ = st.columns(4)
+    c1.metric("Usan filtros", pct(db.users_with_event("filtrar")), border=True,
+              help="Filtran por precio, zona o baño en «Mis matches»")
+    c2.metric("Abren el mapa", pct(db.users_with_event("ver_mapa")), border=True,
+              help="Cambian a la vista de mapa")
+    c3.metric("Abren una ficha", pct(db.users_with_event("ver_detalle")), border=True,
+              help="Interés en un match concreto")
+    st.caption("I11 no se validó en entrevistas (pesa más el volumen de pisos): estas cifras dicen si exploran "
+               "la oferta más allá de los primeros matches.")
+
     st.subheader("Últimas acciones")
     st.dataframe(
         db.recent_events(50), width="stretch", hide_index=True,

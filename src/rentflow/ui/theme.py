@@ -17,6 +17,7 @@ LOGO_ON_VIOLET = ASSETS / "png" / "horizontal" / "rentflow-horizontal-07-blanco-
 ISOTYPE = ASSETS / "png" / "isotipo" / "rentflow-isotipo-02-color-fondo-claro.png"
 ISOTYPE_MONO = ASSETS / "png" / "isotipo" / "rentflow-isotipo-04-monocromo-violeta.png"
 APP_ICON = ASSETS / "png" / "icono-app" / "rentflow-icono-app-violeta.png"
+ROOM_PLACEHOLDER = ASSETS / "rooms" / "placeholder.jpg"  # habitación sin foto: isotipo sobre `surface`
 
 # ---------------------------------------------------------------- color (tokens de DESIGN.md §3)
 
@@ -48,6 +49,10 @@ ICON = {
     "reset": ":material/restart_alt:",
     "star": ":material/star:",
     "publish": ":material/add_home:",
+    "list": ":material/view_list:",
+    "map": ":material/map:",
+    "filter": ":material/filter_list:",
+    "more": ":material/expand_more:",
 }
 
 
@@ -121,6 +126,14 @@ hr {{ margin: 0.75rem 0 !important; border-color: {LINE} !important; }}
 
 /* ---------- Fotos ---------- */
 [data-testid="stImage"] img {{ border-radius: 16px; }}
+/* Miniaturas de tarjeta y foto de la ficha: proporción fija y recorte, sea cual sea la foto subida */
+[class*="st-key-thumb"] img {{ aspect-ratio: 3 / 2; object-fit: cover; border-radius: 10px; width: 100%; }}
+.st-key-roomphoto img {{ aspect-ratio: 16 / 9; object-fit: cover; width: 100%; }}
+
+/* ---------- Barra de filtros y mapa ---------- */
+.st-key-filters {{ background: {SURFACE}; border: 1px solid {LINE}; border-radius: 16px; padding: 10px 16px 6px; }}
+.st-key-filters label p {{ font-size: 13px; color: {INK_MUTED}; }}
+[data-testid="stDeckGlJsonChart"] {{ border-radius: 16px; overflow: hidden; border: 1px solid {LINE}; }}
 [data-testid="stSidebar"] [data-testid="stImage"] img,
 .st-key-hero [data-testid="stImage"] img,
 .st-key-empty [data-testid="stImage"] img {{ border-radius: 0; }}
@@ -160,6 +173,12 @@ hr {{ margin: 0.75rem 0 !important; border-color: {LINE} !important; }}
 .rf-review .who {{ color: {INK_MUTED}; }}
 </style>
 """, unsafe_allow_html=True)
+
+
+def hex_to_rgb(color):
+    """'#4B02F2' -> [75, 2, 242] (pydeck usa listas RGB)."""
+    color = color.lstrip("#")
+    return [int(color[i:i + 2], 16) for i in (0, 2, 4)]
 
 
 # ---------------------------------------------------------------- compatibilidad (DESIGN.md §3)

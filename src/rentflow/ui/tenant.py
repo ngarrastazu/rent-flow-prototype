@@ -11,10 +11,15 @@ from rentflow.ui.components import (
     rating_line,
     room_badges,
     room_facts,
+    room_photo,
     verified_badge,
 )
+from rentflow.ui.maps import LAYER_ID, rooms_deck
 from rentflow.ui.navigation import PAGE_MATCHES, PAGE_MESSAGES, PAGE_PROFILE, go
 from rentflow.ui.theme import ICON, badges, empty_state, review_html, score_block
+
+PAGE_SIZE = 10  # tarjetas por tanda en la vista de lista ("Ver más" añade otras tantas)
+VIEWS = {"Lista": ICON["list"], "Mapa": ICON["map"]}
 
 
 def page_matches(user):
@@ -37,23 +42,100 @@ def page_matches(user):
         db.log_event(user["id"], "ver_matches")
         st.session_state.logged_matches = True
 
-    results = matching.matches_for(user["id"])
-    if not results:
+    all_results = matching.matches_for(user["id"], limit=None)
+    if not all_results:
         empty_state("No hay habitaciones que encajen. Prueba a ampliar zonas o presupuesto en tu perfil.",
                     lambda: st.button("Editar mi perfil", on_click=go, args=(PAGE_PROFILE,)))
         return
 
-    for r in results:
-        match_card(r)
+    results = filter_bar(user, all_results)
+    if not results:
+        empty_state("Ninguna habitación cumple estos filtros.",
+                    lambda: st.button("Quitar filtros", icon=ICON["filter"], on_click=clear_filters,
+                                      args=(all_results,)))
+        return
 
+    if (st.session_state.get("f_view") or "Lista") == "Mapa":
+        if not st.session_state.get("logged_map"):
+            db.log_event(user["id"], "ver_mapa")
+            st.session_state.logged_map = True
+        matches_map(results)
+    else:
+        shown = st.session_state.get("matches_shown", PAGE_SIZE)
+        for r in results[:shown]:
+            match_card(r)
+        if len(results) > shown:
+            st.button(f"Ver más ({len(results) - shown})", icon=ICON["more"], width="stretch",
+                      on_click=show_more, args=(shown,))
+
+
+def show_more(shown):
+    st.session_state.matches_shown = shown + PAGE_SIZE
+
+
+# ---------------------------------------------------------------- filtros (sin recalcular el perfil)
+
+def _price_bounds(results):
+    prices = [r["room"]["price"] for r in results]
+    lo, hi = min(prices) // 10 * 10, -(-max(prices) // 10) * 10
+    return lo, max(hi, lo + 10)  # el slider necesita un rango no vacío
+
+
+def clear_filters(results):
+    st.session_state.f_price = _price_bounds(results)[1]
+    st.session_state.f_zones = []
+    st.session_state.f_bath = False
+    st.session_state.matches_shown = PAGE_SIZE
+
+
+def filter_bar(user, all_results):
+    """Barra de filtros y vista. Devuelve los resultados filtrados y ordenados (la puntuación no cambia)."""
+    lo, hi = _price_bounds(all_results)
+    zone_options = sorted({r["room"]["zone"] for r in all_results})
+    ss = st.session_state
+    # Valores por defecto y saneado si el perfil cambió (sin pasar `value=` para no chocar con session_state)
+    if "f_price" not in ss or not lo <= ss.f_price <= hi:
+        ss.f_price = hi  # por defecto sin límite de precio
+    ss.f_zones = [z for z in ss.get("f_zones", []) if z in zone_options]
+    ss.setdefault("f_bath", False)
+    ss.setdefault("f_sort", "Compatibilidad")
+    ss.setdefault("f_view", "Lista")
+
+    with st.container(key="filters"):
+        c1, c2, c3, c4 = st.columns([2, 2.8, 1.3, 1.9], vertical_alignment="bottom", gap="small")
+        c1.slider("Precio máximo (€/mes)", lo, hi, step=10, key="f_price")
+        c2.multiselect("Zonas", zone_options, key="f_zones", placeholder="Todas las zonas")
+        c3.toggle("Baño propio", key="f_bath")
+        c4.selectbox("Ordenar por", list(matching.SORTS), key="f_sort")
+
+    active = ss.f_price < hi or bool(ss.f_zones) or ss.f_bath
+    results = matching.filter_matches(all_results, ss.f_price, ss.f_zones, ss.f_bath, ss.f_sort)
+    if active and not ss.get("logged_filter"):
+        db.log_event(user["id"], "filtrar")  # I11: ¿exploran la oferta más allá del top?
+        ss.logged_filter = True
+
+    c1, c2, c3 = st.columns([3.2, 1.3, 1.5], vertical_alignment="center")
+    c1.markdown(f"**{len(results)}** de {len(all_results)} habitaciones compatibles"
+                + (" · con filtros" if active else ""))
+    if active:
+        c2.button("Quitar filtros", icon=ICON["filter"], type="tertiary", on_click=clear_filters,
+                  args=(all_results,))
+    c3.segmented_control("Vista", list(VIEWS), key="f_view", format_func=lambda v: f"{VIEWS[v]} {v}",
+                         label_visibility="collapsed", width="stretch")
+    return results
+
+
+# ---------------------------------------------------------------- lista y mapa
 
 def match_card(r):
     room = r["room"]
     landlord = db.get_user(room["landlord_id"])
     with st.container(border=True):
-        c1, c2, c3 = st.columns([1, 4, 1.4], vertical_alignment="center")
-        with c1:
+        c0, c1, c2, c3 = st.columns([1.2, 1.2, 3.5, 1.1], vertical_alignment="center")
+        with c0:
             score_block(r["score"], size=32)
+        with c1:
+            room_photo(room, key=f"thumb{room['id']}")
         with c2:
             st.markdown(f"**{room['title']}**")
             st.caption(room_facts(room))
@@ -67,6 +149,31 @@ def match_card(r):
             )
         with c3:
             st.button("Ver detalles", key=f"det{room['id']}", width="stretch",
+                      on_click=go, args=(PAGE_MATCHES,), kwargs={"selected_room": room["id"]})
+
+
+def matches_map(results):
+    """Mapa con las habitaciones filtradas; al pulsar un punto se muestra su resumen a la derecha."""
+    left, right = st.columns([3, 1.6], gap="medium")
+    with left:
+        event = st.pydeck_chart(rooms_deck(results), height=470, key="matches_map",
+                                on_select="rerun", selection_mode="single-object")
+    picked = (event.selection.get("objects", {}) or {}).get(LAYER_ID, []) if event else []
+    chosen = next((r for r in results if picked and r["room"]["id"] == picked[0]["id"]), None)
+    with right:
+        if not chosen:
+            with st.container(border=True):
+                st.markdown("**Pulsa un punto del mapa** para ver la habitación.")
+                st.caption("El número es la compatibilidad. Ubicación aproximada por barrio.")
+            return
+        room = chosen["room"]
+        with st.container(border=True):
+            room_photo(room, key=f"thumbmap{room['id']}")
+            score_block(chosen["score"], size=32)
+            st.markdown(f"**{room['title']}**")
+            st.caption(room_facts(room))
+            badges(room_badges(room))
+            st.button("Ver detalles", key=f"mapdet{room['id']}", width="stretch",
                       on_click=go, args=(PAGE_MATCHES,), kwargs={"selected_room": room["id"]})
 
 
@@ -88,8 +195,7 @@ def room_detail(user, prefs, room_id):
 
     left, right = st.columns([3, 2], gap="large")
     with left:
-        if room["photo"]:
-            st.image(room["photo"], width="stretch", caption=room["title"])
+        room_photo(room, key="roomphoto")
         st.write(room["description"])
         rules = [
             "se puede fumar" if room["smoking_allowed"] else "no se fuma",
@@ -139,6 +245,9 @@ def room_detail(user, prefs, room_id):
             st.caption("Esta habitación no cumple alguno de tus requisitos.")
         st.button("Contactar con el casero y los compañeros", icon=ICON["chat"], type="primary", width="stretch",
                   on_click=contact, args=(user, room))
+        st.caption(f"{ICON['zone']} Ubicación aproximada · {room['zone']}")
+        st.pydeck_chart(rooms_deck([{"room": room, "score": scored[0] if scored else None}],
+                                   zoom=14, show_scores=False), height=170, key=f"minimap{room_id}")
 
 
 def log_reviews_opened(user_id, room_id):

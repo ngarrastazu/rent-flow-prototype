@@ -18,6 +18,25 @@ ZONES = [
 ]
 SCHEDULES = ["Mañanas (me levanto temprano)", "Horario normal", "Noches / turnos"]
 
+# Centro aproximado de cada barrio (lat, lon) para el mapa. Es orientativo: no hay direcciones reales.
+ZONE_COORDS = {
+    "Chamberí": (40.4340, -3.7036), "Malasaña": (40.4262, -3.7046), "Chueca": (40.4228, -3.6976),
+    "Salamanca": (40.4300, -3.6780), "Retiro": (40.4115, -3.6770), "Lavapiés": (40.4087, -3.7008),
+    "La Latina": (40.4108, -3.7106), "Argüelles": (40.4302, -3.7160), "Moncloa": (40.4390, -3.7240),
+    "Tetuán": (40.4600, -3.6985), "Arganzuela": (40.3985, -3.6955), "Usera": (40.3875, -3.7070),
+}
+MADRID_CENTER = (40.4210, -3.7030)
+
+
+def room_coords(room) -> tuple[float, float]:
+    """Posición aproximada de la habitación: centro del barrio + desplazamiento fijo según su id.
+
+    Determinista (no usa random) para que cada piso salga siempre en el mismo punto y no se solapen.
+    """
+    lat, lon = ZONE_COORDS.get(room["zone"], MADRID_CENTER)
+    k = room["id"] * 2654435761 % 2**32  # hash multiplicativo de Knuth
+    return lat + ((k % 1000) / 1000 - 0.5) * 0.008, lon + ((k // 1000 % 1000) / 1000 - 0.5) * 0.010
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (
     id          INTEGER PRIMARY KEY,
