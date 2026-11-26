@@ -13,6 +13,7 @@ from rentflow.ui.components import (
     request_badge,
     room_badges,
     room_facts,
+    room_gallery,
     room_photo,
     verified_badge,
     votes_text,
@@ -26,6 +27,7 @@ from rentflow.ui.navigation import (
     PAGE_REQUESTS,
     flash,
     go,
+    open_direct,
 )
 from rentflow.ui.theme import ICON, badge, badges, empty_state, review_html, score_block
 
@@ -210,7 +212,7 @@ def room_detail(user, prefs, room_id):
 
     left, right = st.columns([3, 2], gap="large")
     with left:
-        room_photo(room, key="roomphoto")
+        room_gallery(room)
         st.write(room["description"])
         rules = [
             "se puede fumar" if room["smoking_allowed"] else "no se fuma",
@@ -232,6 +234,8 @@ def room_detail(user, prefs, room_id):
                 if p:
                     st.caption(habit_line(p))
                 rating_line(m["id"])
+                st.button(f"Enviar mensaje a {m['name'].split()[0]}", icon=":material/mail:", key=f"dmmate{m['id']}",
+                          type="tertiary", on_click=open_direct, args=(user["id"], m["id"]))
 
         st.subheader("Casero")
         with st.container(border=True, key="cardlandlord"):
@@ -239,6 +243,9 @@ def room_detail(user, prefs, room_id):
             if landlord["bio"]:
                 st.caption(landlord["bio"])
             rating_line(landlord["id"])
+            st.button("Enviar mensaje al casero", icon=":material/mail:", key="dmlandlord", type="tertiary",
+                      on_click=open_direct, args=(user["id"], landlord["id"]),
+                      help="Conversación privada: solo tú y el casero. Los compañeros no la ven.")
 
         show = st.toggle("Ver reseñas del casero y de los compañeros", key=f"rev{room_id}",
                          on_change=log_reviews_opened, args=(user["id"], room_id))

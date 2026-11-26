@@ -118,7 +118,10 @@ def test_room_coords_are_deterministic_and_near_zone():
 
 
 def test_seed_rooms_have_photos(seeded_db):
-    assert all(r["photo"] for r in db.active_rooms())
+    assert all(db.main_photo(r["id"]) for r in db.active_rooms())
+    mario_flat = db.room_photos(1)
+    assert [p["space"] for p in mario_flat] == ["Habitación", "Salón", "Comedor", "Cocina", "Baño"]
+    assert mario_flat[0]["is_main"] and mario_flat[0]["path"] == "rooms/habitacion-01.jpg"
 
 
 def test_update_user_keeps_role_and_verification(seeded_db):

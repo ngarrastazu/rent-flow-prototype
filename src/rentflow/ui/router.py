@@ -55,7 +55,11 @@ def sidebar(user, pages):
     with st.sidebar:
         with st.container(border=True, key="carduser"):
             person_header(user)
-            st.caption(f"{user['occupation']} · {'Busca habitación' if user['role'] == 'inquilino' else 'Casero'}")
+            if user["role"] == "casero":
+                status = "Casero"
+            else:
+                status = "Vive en un piso de RentFlow" if user["id"] in db.rooms_lived_in() else "Busca habitación"
+            st.caption(f"{user['occupation']} · {status}")
         st.radio("Menú", pages, key="page", label_visibility="collapsed",
                  format_func=lambda p: f"{PAGE_ICONS[p]} {p}",
                  on_change=lambda: st.session_state.update(selected_room=None))

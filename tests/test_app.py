@@ -145,3 +145,47 @@ def test_tenant_sends_request_from_dialog(tmp_path, monkeypatch):
     req = _db.latest_request(1, 1)
     assert req and req["status"] == "pendiente" and req["months"] == 12
     assert any("Solicitud enviada" in m.value for m in at.markdown)
+
+
+def test_gallery_and_photo_manager(tmp_path, monkeypatch):
+    at = _app(tmp_path, monkeypatch).run()
+    from rentflow import db as _db
+    at.button[0].click().run()  # Mario
+    at.button(key="det1").click().run()
+    assert not at.exception
+    at.session_state["gal1"] = 3  # cocina
+    at.run()
+    assert not at.exception
+    assert any("Foto 4 de 5 · Cocina" in c.value for c in at.caption)
+
+    next(b for b in at.sidebar.button if b.label == "Cerrar sesión").click().run()
+    _login(at, "Carmen Ruiz")
+    at.button(key="photos1").click().run()
+    assert not at.exception
+    kitchen = next(p for p in _db.room_photos(1) if p["space"] == "Cocina")
+    at.button(key=f"mn{kitchen['id']}").click().run()
+    assert not at.exception
+    assert _db.main_photo(1)["id"] == kitchen["id"]
+
+
+def test_publish_page_renders(tmp_path, monkeypatch):
+    at = _app(tmp_path, monkeypatch).run()
+    _login(at, "Carmen Ruiz")
+    at.sidebar.radio[0].set_value("Publicar habitación").run()
+    assert not at.exception
+
+
+def test_private_message_to_landlord(tmp_path, monkeypatch):
+    at = _app(tmp_path, monkeypatch).run()
+    from rentflow import db as _db
+    at.button[0].click().run()  # Mario
+    at.button(key="det1").click().run()
+    at.button(key="dmlandlord").click().run()  # «Enviar mensaje al casero»
+    assert not at.exception
+    assert at.selectbox[0].format_func(at.selectbox[0].value) == "Privado · Carmen Ruiz"
+    at.chat_input[0].set_value("Hola Carmen, ¿la habitación tiene calefacción?").run()
+    assert not at.exception
+    carmen = _db.find_user_by_name("Carmen Ruiz")["id"]
+    conv = _db.direct_conversations_of(carmen)[0]
+    assert [m["text"] for m in _db.messages_of(conv["id"])] == ["Hola Carmen, ¿la habitación tiene calefacción?"]
+    assert _db.count_events("mensaje_privado") == 1

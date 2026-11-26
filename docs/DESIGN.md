@@ -214,6 +214,9 @@ Máximo 3 insignias por tarjeta.
 - Siempre con proporción fija: **3:2** en miniaturas (tarjetas, panel del mapa, casero) y **16:9** en la ficha, recortadas con
   `object-fit: cover` para que cualquier foto subida encaje. Radio 10 px en miniaturas y 16 px en la ficha.
 - Sin foto: imagen de reserva con el isotipo en violeta suave sobre `surface` (`assets/rooms/placeholder.jpg`).
+- **Varias fotos por anuncio**: la habitación y el resto del piso, cada una con su espacio. La **principal** es la portada en tarjetas, mapa y panel del casero; en el gestor se marca con la insignia verde «Principal».
+- **Galería de la ficha**: foto grande 16:9 y debajo un selector por espacio («Habitación · Salón · Cocina · Baño», numerando los repetidos: «Salón 2») a todo el ancho, solo texto; y una línea «Foto 2 de 5 · Salón».
+- **Publicar**: primero las fotos (miniaturas 3:2 en rejilla de 4, espacio de cada una y «Foto principal»), luego los datos del anuncio.
 - Fotos de ejemplo: solo con licencia libre, **sin personas**, con autor y licencia en `assets/rooms/CREDITS.md`.
 
 ### Filtros y vistas («Tus matches»)

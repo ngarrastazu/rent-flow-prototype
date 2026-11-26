@@ -11,13 +11,42 @@ from rentflow import db, matching
 SEED = 42  # semilla fija: los datos son siempre los mismos
 
 # Fotos de ejemplo (Wikimedia Commons, sin personas; créditos en assets/rooms/CREDITS.md).
-# Se asignan por orden, sin usar `random`, para no alterar el resto de datos de la demo.
-ROOM_PHOTOS = sorted((db.PROJECT_ROOT / "assets" / "rooms").glob("room-*.jpg"))
+# Se guardan como ruta dentro de assets/ (no se copian los bytes) y se asignan por orden, sin usar
+# `random`, para no alterar el resto de datos de la demo.
+ASSETS = db.PROJECT_ROOT / "assets"
 
 
-def room_photo(index):
-    """Bytes de la foto de ejemplo n.º `index` (cíclica), o None si no hay fotos."""
-    return ROOM_PHOTOS[index % len(ROOM_PHOTOS)].read_bytes() if ROOM_PHOTOS else None
+def _photos(prefix):
+    return sorted(p.relative_to(ASSETS).as_posix() for p in (ASSETS / "rooms").glob(f"{prefix}-*.jpg"))
+
+
+BEDROOMS, LIVING, KITCHENS, BATHS = _photos("habitacion"), _photos("salon"), _photos("cocina"), _photos("bano")
+
+# El piso de Mario: todas las fotos son del mismo piso real (habitación, salón, comedor, cocina y baño)
+MARIO_FLAT_PHOTOS = [
+    {"path": "rooms/habitacion-01.jpg", "space": "Habitación"},
+    {"path": "rooms/chamberi-salon.jpg", "space": "Salón"},
+    {"path": "rooms/chamberi-comedor.jpg", "space": "Comedor"},
+    {"path": "rooms/chamberi-cocina.jpg", "space": "Cocina"},
+    {"path": "rooms/chamberi-bano.jpg", "space": "Baño"},
+]
+
+
+def listing_photos(i, own_bathroom):
+    """Fotos del anuncio n.º i (desde 0): habitación (principal), salón, cocina y, si tiene baño propio, baño.
+
+    habitacion-01 queda reservada para el piso de Mario.
+    """
+    if not BEDROOMS:
+        return []
+    others = BEDROOMS[1:] or BEDROOMS
+    photos = [{"path": others[i % len(others)], "space": "Habitación"}]
+    for files, space in ((LIVING, "Salón"), (KITCHENS, "Cocina")):
+        if files:
+            photos.append({"path": files[i % len(files)], "space": space})
+    if own_bathroom and BATHS:
+        photos.append({"path": BATHS[i % len(BATHS)], "space": "Baño"})
+    return photos
 
 ZONE_PRICE = {  # precio base orientativo de una habitación (€/mes)
     "Chamberí": 640, "Malasaña": 620, "Chueca": 630, "Salamanca": 680, "Retiro": 600,
@@ -154,7 +183,7 @@ def seed():
     db.create_room(landlords[0], "Habitación con baño propio en Chamberí", "Chamberí", 650, 14, True,
                    "2027-01-01", False, False,
                    "Piso exterior de 3 habitaciones junto a la plaza de Olavide. Mucha luz, salón amplio "
-                   "y cocina reformada. Metro Iglesia a 3 minutos.", photo=room_photo(0), members=[lucia, tom])
+                   "y cocina reformada. Metro Iglesia a 3 minutos.", photos=MARIO_FLAT_PHOTOS, members=[lucia, tom])
 
     # --- Resto de habitaciones ---
     for i in range(29):
@@ -170,7 +199,7 @@ def seed():
             zone=zone, price=price, size_m2=random.randint(9, 18), own_bathroom=own_bath,
             available_from=rand_date(date(2026, 12, 1), date(2027, 2, 15)),
             smoking_allowed=random.random() < 0.2, pets_allowed=random.random() < 0.3,
-            description=random.choice(DESCRIPTIONS), photo=room_photo(i + 1), members=members,
+            description=random.choice(DESCRIPTIONS), photos=listing_photos(i, own_bath), members=members,
         )
 
     # --- Reseñas de caseros y de compañeros ---

@@ -13,7 +13,7 @@ def page_metrics(_user=None):
     seen = db.users_with_event("ver_matches")
     reviews = db.users_with_event("ver_resenas")
     contacts = db.users_with_event("contactar")
-    msgs = db.count_events("mensaje")
+    msgs = db.count_events("mensaje") + db.count_events("mensaje_privado")
 
     def pct(n):
         return f"{round(100 * n / seen)} %" if seen else "—"
@@ -22,7 +22,8 @@ def page_metrics(_user=None):
     c1.metric("Ven matches", seen, border=True, help="Usuarios que han visto sus matches: denominador de los %")
     c2.metric("Abren reseñas", pct(reviews), border=True, help="I12 · objetivo ≥ 60 %")
     c3.metric("Contactan", pct(contacts), border=True, help="I9 · objetivo ≥ 50 %")
-    c4.metric("Mensajes", msgs, border=True, help="Chat en la app frente a WhatsApp · objetivo ≥ 60 %")
+    c4.metric("Mensajes", msgs, border=True,
+              help="Chats de piso y privados dentro de la app frente a WhatsApp · objetivo ≥ 60 %")
     st.caption("Objetivos: reseñas ≥ 60 % (I12) · contacto ≥ 50 % (I9) · conversaciones dentro de la app ≥ 60 %.")
 
     st.markdown("##### Exploración de la oferta · I11")

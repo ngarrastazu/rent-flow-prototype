@@ -55,10 +55,11 @@ rent-flow-prototype/
 │       ├── maps.py         # mapa de habitaciones con pydeck (puntos con % y color de compatibilidad)
 │       ├── router.py       # setup_page(), carga inicial de datos, barra lateral, ROUTES y main()
 │       ├── navigation.py   # constantes PAGE_* y PAGE_ICONS, menús por rol, go(), login(), logout(), DEMO_USER
-│       ├── components.py   # piezas de personas y pisos: verified_badge, room_facts, room_photo, about_fields…
+│       ├── components.py   # piezas de personas y pisos: room_photo (portada), room_gallery, about_fields…
 │       ├── landing.py      # entrada: probar como Mario, entrar, crear cuenta
 │       ├── tenant.py       # Mis matches (filtros, lista/mapa, «Ver más»), ficha, Mi perfil y hábitos
-│       ├── landlord.py     # Mis habitaciones (solicitudes · más compatibles · chats), Publicar, Mi perfil
+│       ├── landlord.py     # Mis habitaciones (solicitudes · más compatibles · chats · gestor de fotos),
+│                           #   Publicar (varias fotos con espacio y principal), Mi perfil
 │       ├── residents.py    # Mis inquilinos (casero): quién vive en sus pisos, escribirles, darles de baja
 │       ├── requests.py     # Mis solicitudes y Mi piso (inquilino): estado, retirar, opinar como compañero
 │       ├── messages.py     # chat y valoraciones (ambos roles)
@@ -68,7 +69,8 @@ rent-flow-prototype/
 │                           #   flujo de la UI con AppTest: demo, filtros/mapa, edición de perfil (test_app.py);
 │                           #   reglas de diseño: sin emojis, logos, rangos de color, créditos de fotos (test_design.py)
 ├── assets/                 # logos de marca: png/ y svg/ × horizontal, vertical, isotipo, icono-app
-│   └── rooms/              # 12 fotos de ejemplo (Wikimedia Commons, sin personas) + CREDITS.md + placeholder.jpg
+│   └── rooms/              # 26 fotos de ejemplo por espacio (habitacion-, salon-, cocina-, bano-, chamberi-*)
+│                           #   de Wikimedia Commons, sin personas + CREDITS.md + placeholder.jpg
 ├── docs/DESIGN.md          # guía visual (marca, color, tipografía, componentes, pantallas)
 ├── .streamlit/config.toml  # tema de Streamlit: colores de marca y fuentes Inter / Inter Tight
 ├── data/                   # rentflow.db (ignorada por git; solo se versiona .gitkeep)
@@ -85,10 +87,11 @@ Dependencias entre módulos (de arriba abajo, nunca al revés): `app.py` → `ui
 | --- | --- | --- |
 | `users` | id, name, age, role (`inquilino` / `casero`), occupation, origin, bio, verified | Un único tipo de usuario con rol |
 | `preferences` | user_id, budget_min/max, zones (`"Chamberí\|Malasaña"`), move_in, schedule, cleanliness 1–5, noise 1–5, smokes, pets, own_bathroom | También la tienen los compañeros que ya viven en un piso: se usa para compararles |
-| `rooms` | landlord_id, title, zone, price, size_m2, own_bathroom, available_from, smoking_allowed, pets_allowed, description, photo (BLOB), active, tenant_id | `active = 0`: no sale en los matches (alquilada o pausada). `tenant_id`: quien la ocupa tras aceptar su solicitud (NULL = libre) |
+| `rooms` | landlord_id, title, zone, price, size_m2, own_bathroom, available_from, smoking_allowed, pets_allowed, description, active, tenant_id | `active = 0`: no sale en los matches (alquilada o pausada). `tenant_id`: quien la ocupa tras aceptar su solicitud (NULL = libre). `photo` está obsoleta (ver `room_photos`) |
+| `room_photos` | room_id, image (BLOB) o path, space, is_main, position | Fotos del anuncio (máx. `MAX_PHOTOS` = 12): la habitación y el resto del piso. **Una** principal por anuncio (índice único parcial) |
 | `room_members` | room_id, user_id | Compañeros que ya viven en el piso. Quien vive en un piso **no** aparece como candidato que busca |
 | `reviews` | author_id, target_id, rating 1–5, comment | Reseñas de caseros y de compañeros |
-| `conversations` | room_id, tenant_id (único por par) | Participan el interesado, el casero y los compañeros |
+| `conversations` | room_id, tenant_id, kind, peer_id | `kind = 'grupo'`: chat del piso (room_id + interesado, único por par), con el casero y los compañeros; ahí llegan solicitudes y avisos. `kind = 'privado'`: solo dos personas (`tenant_id` < `peer_id`, sin habitación), uno por pareja (índice único parcial) |
 | `messages` | conversation_id, author_id, text | `author_id` NULL = mensaje automático de RentFlow (`db.send_system_message`) |
 | `requests` | room_id, tenant_id, message, move_in, months, status, note, decided_at | Solicitudes. `status`: `pendiente` → `aceptada` / `rechazada` / `retirada` (inquilino) / `cerrada` (sistema). Como mucho una pendiente por inquilino y habitación (índice único parcial) |
 | `request_votes` | request_id, user_id, vote (1 / −1) | Opinión de cada compañero del piso sobre un candidato |
@@ -100,11 +103,12 @@ Convenciones:
 - Operaciones de varias sentencias (p. ej. `create_room` + compañeros) van en **una sola** `with connect()` para que sean atómicas.
 - Fechas como texto ISO `AAAA-MM-DD`; `created_at` lo pone SQLite (UTC). Booleanos como `INTEGER` 0/1.
 - Zonas siempre de `db.ZONES`; horarios siempre de `db.SCHEDULES` (el algoritmo compara cadenas exactas).
-- Si cambias el esquema: actualiza `SCHEMA`, ajusta `seed.py` y regenera con `uv run rentflow-seed`. No hay sistema de migraciones; la única excepción es `init_db()`, que añade `rooms.tenant_id` a bases de datos anteriores a las solicitudes (`CREATE TABLE IF NOT EXISTS` no añade columnas). Si añades otra columna a una tabla existente, haz lo mismo o pide regenerar la base de datos.
+- Si cambias el esquema: actualiza `SCHEMA`, ajusta `seed.py` y regenera con `uv run rentflow-seed`. No hay sistema de migraciones; la única excepción es `init_db()`, que añade `rooms.tenant_id` y `conversations.kind/peer_id` a bases de datos anteriores a las solicitudes (`CREATE TABLE IF NOT EXISTS` no añade columnas) y pasar la foto antigua a `room_photos`. Si añades otra columna a una tabla existente, haz lo mismo o pide regenerar la base de datos.
 - **Quién vive dónde:** `room_members` = compañeros que ya viven en el piso; `rooms.tenant_id` = quien ocupa esa habitación. `db.rooms_lived_in()` une ambos (no aparecen en la búsqueda inversa). `db.residents_of_landlord()` los lista para «Mis inquilinos» (`kind` = `ocupante` / `compañero`).
 - `db.DB_PATH` se lee en cada conexión: los tests lo parchean con `monkeypatch.setattr(db, "DB_PATH", ...)`.
 - **Ubicación:** no hay direcciones. `db.ZONE_COORDS` tiene el centro aproximado de cada zona (debe cubrir todas las de `ZONES`) y `db.room_coords(room)` le suma un desplazamiento fijo según el id (determinista, sin `random`).
-- **Fotos:** `rooms.photo` es un BLOB. El seed carga las de `assets/rooms/`; las subidas por caseros se guardan igual. Sin foto, la interfaz muestra `theme.ROOM_PLACEHOLDER`.
+- **Fotos:** cada anuncio tiene varias en `room_photos`, cada una con su espacio (`db.SPACES`: Habitación, Salón, Comedor, Cocina, Baño, Terraza, Edificio, Otra) y **una principal** (`is_main`), que es la portada en tarjetas, mapa y panel del casero. Las subidas por caseros se guardan como `image` (BLOB); las de ejemplo del seed como `path` relativo a `assets/` (no se duplican bytes: la base de datos ocupa ~0,1 MB). Funciones: `create_room(..., photos=[...])` (la primera es la principal), `add_room_photos`, `room_photos` (la principal primero), `main_photo`, `set_main_photo`, `set_photo_space`, `delete_room_photo` (si borras la principal, pasa a serlo la siguiente). Sin fotos, la interfaz muestra `theme.ROOM_PLACEHOLDER`.
+- `init_db()` también migra la foto única antigua (`rooms.photo`) a `room_photos` como principal y vacía la columna (idempotente).
 
 ## Algoritmo de matching (`matching.py`)
 
@@ -161,7 +165,8 @@ al ocupante → publicada otra vez. El casero también puede **pausar** un anunc
 - Widgets con `key`: inicializa el valor en `st.session_state` antes de dibujarlos y **no** pases `value=` a la vez (Streamlit avisa del conflicto).
 - El usuario de la demo se busca con `db.find_user_by_name(DEMO_USER)`.
 - Avisos tras guardar: `navigation.flash("…")` antes de `st.rerun()` (o en un callback); `router.main()` lo muestra como `st.toast`.
-- `navigation.open_chat(room_id, tenant_id)` (callback): abre o crea la conversación y va a Mensajes.
+- `navigation.open_chat(room_id, tenant_id)` (callback): abre o crea el **chat del piso** y va a Mensajes.
+- `navigation.open_direct(user_id, other_id)` (callback): abre o crea el **chat privado** entre dos personas (`db.get_or_create_direct`, la pareja se ordena: da igual quién empiece). Botón «Enviar mensaje» con icono `:material/mail:`; el chat de piso usa `ICON["chat"]`.
 - **Diálogos** (`@st.dialog`): se abren con una marca en sesión (`_request_dialog`, `_accept_dialog`, `_remove_dialog`) que se pone en el `on_click` del botón; la marca se borra al confirmar, al cancelar y en `on_dismiss` (cerrar con la X o clic fuera). No la borres al abrir el diálogo: los botones de dentro dejarían de funcionar en los tests y tras una re-ejecución completa.
 
 ### Estilo (detalle completo en `docs/DESIGN.md`)
@@ -171,7 +176,7 @@ al ocupante → publicada otra vez. El casero también puede **pausar** un anunc
 - Insignias con `badge(texto, "verified" | "brand" | "muted")` y `badges([...])` (máx. 3); verificado = `verified_badge(user)`. Estrellas con `stars_html()` / `rating_line()`; reseñas con `review_html()`.
 - Tarjetas con `st.container(border=True)`; estados vacíos con `empty_state(mensaje, acción)`.
 - **Un solo `type="primary"` por pantalla**; el resto secundarios o `type="tertiary"` (volver, cerrar sesión, abrir chat).
-- Contenedores con estilo propio vía `key` → clase CSS `.st-key-<key>`: `hero` (banda violeta de portada), `narrow` (formularios de ~760 px), `sticky` (columna del match fija), `empty`, `filters` (barra de filtros), `roomphoto` (foto 16:9 de la ficha) y cualquier `thumb…` (miniatura 3:2 recortada). Fotos siempre con `components.room_photo(room, key)`.
+- Contenedores con estilo propio vía `key` → clase CSS `.st-key-<key>`: `hero` (banda violeta de portada), `narrow` (formularios de ~760 px), `sticky` (columna del match fija), `empty`, `filters` (barra de filtros), `roomphoto` (foto 16:9 de la ficha) y cualquier `thumb…` (miniatura 3:2 recortada). Portada siempre con `components.room_photo(room, key)`; galería de la ficha con `components.room_gallery(room)` (foto grande + selector por espacio en texto, sin iconos: con 5 espacios no caben); para pintar una fila de `room_photos` usa `components.photo_source(photo)` (bytes o ruta).
 - **pydeck:** cualquier texto en los parámetros de una capa se interpreta como expresión. Los literales van entre comillas simples dentro de la cadena (`radius_units="'pixels'"`, `get_text_anchor="'middle'"`). El mapa base es de Carto y necesita internet.
 - **Espaciado** (en `theme.inject_css`): 10 px entre elementos de la página y 5 px dentro de las tarjetas. Las tarjetas se marcan con un `key` que empieza por `card` (`st.container(border=True, key="card…")`). Entre párrafos de un mismo bloque hay 0,35rem. Streamlit pone `margin-bottom: -1rem` a los bloques de texto y el CSS lo anula; no lo reintroduzcas o el texto se solapará con el elemento siguiente.
 - Varias líneas cortas seguidas (p. ej. una lista de candidatos) van en **un solo** `st.caption` con saltos `"  \n"`, no en un `st.caption` por línea, para que no se separen con el hueco entre elementos.
@@ -183,22 +188,23 @@ al ocupante → publicada otra vez. El casero también puede **pausar** un anunc
 
 ### Pantallas
 - **Entrada:** banda violeta con el logo en negativo y el lema; "Probar como Mario (demo)" (único botón violeta), entrar como cualquier usuario, crear cuenta (un inquilino nuevo va directo a su perfil).
-- **Inquilino:** Mis matches (barra de filtros, contador «N de M», vista Lista con fotos y «Ver más» o vista Mapa con resumen al pulsar un punto) → ficha de la habitación (foto, compañeros, casero, reseñas, desglose, mini mapa; botón violeta **«Solicitar esta habitación»** con diálogo de presentación, entrada y estancia, o el estado de su solicitud; «Contactar» como secundario) · **Mis solicitudes** (estado, opinión de los compañeros, retirar, chat) · **Mi piso** (su habitación y compañeros con afinidad; si es compañero, candidatos para opinar «Me encaja / No me encaja») · Mi perfil y hábitos · Mensajes · Métricas.
-- **Casero:** Mis habitaciones (estado Publicada / Pausada / Alquilada, pausar, y pestañas **Solicitudes** con compatibilidad, mensaje y opinión de los compañeros, aceptar con confirmación o rechazar · **Más compatibles** · **Chats**) · **Mis inquilinos** (quién vive en cada piso, escribir, dar de baja con confirmación y motivo) · Publicar habitación · Mensajes · Mi perfil · Métricas.
+- **Inquilino:** Mis matches (barra de filtros, contador «N de M», vista Lista con fotos y «Ver más» o vista Mapa con resumen al pulsar un punto) → ficha de la habitación (galería de fotos por espacio, compañeros, casero, reseñas, desglose, mini mapa; botón violeta **«Solicitar esta habitación»** con diálogo de presentación, entrada y estancia, o el estado de su solicitud; «Contactar» como secundario) · **Mis solicitudes** (estado, opinión de los compañeros, retirar, chat) · **Mi piso** (su habitación y compañeros con afinidad; si es compañero, candidatos para opinar «Me encaja / No me encaja») · Mi perfil y hábitos · Mensajes · Métricas.
+- **Casero:** Mis habitaciones (estado Publicada / Pausada / Alquilada, pausar, **Fotos (N)** que abre el gestor de fotos —principal, espacio, eliminar, añadir—, y pestañas **Solicitudes** con compatibilidad, mensaje y opinión de los compañeros, aceptar con confirmación o rechazar · **Más compatibles** · **Chats**) · **Mis inquilinos** (quién vive en cada piso, escribir, dar de baja con confirmación y motivo) · Publicar habitación (primero las fotos, fuera del formulario para ver miniaturas, elegir el espacio de cada una y la principal; luego los datos) · Mensajes · Mi perfil · Métricas.
 - **Perfil (ambos roles):** bloque «Sobre ti» (`components.about_fields`, dentro de un `st.form`): edad, ocupación, de dónde eres y descripción (máx. 300 caracteres). El inquilino lo tiene en «Mi perfil y hábitos» junto a sus hábitos; el casero, en «Mi perfil». Se guarda con `db.update_user`, que no toca el rol, la verificación ni los hábitos. **El nombre de un perfil verificado no se puede editar** (anularía la verificación).
-- **Mensajes:** selector de conversación, chat, valorar a otro participante.
+- **Mensajes:** chats de piso y privados en un mismo selector, ordenados por el último mensaje (los privados empiezan por «Privado ·»); cabecera con quién participa; chat; valorar a otro participante. `db.conversations_of` devuelve solo los de piso y `db.direct_conversations_of` los privados (con `other_*`).
+- **Enviar mensaje (privado):** en la ficha de la habitación (a cada compañero y al casero), en «Mi piso» (al casero, a cada compañero y a cada candidato), en «Mis inquilinos» y en la tarjeta de una habitación alquilada (al inquilino), y en cada solicitud («Mensaje privado», junto a «Chat del piso»).
 - **Métricas (equipo):** fila de hipótesis (ven matches, abren reseñas I12, contactan I9, mensajes), fila «Exploración de la oferta · I11» (usan filtros, abren el mapa, abren una ficha), fila «Del match al piso» (envían solicitud, aceptadas, rechazadas, compañeros que opinan), últimas acciones y «Reiniciar datos de la demo».
 
 ## Datos de ejemplo (`seed.py`)
 
 - Deterministas: `seed()` llama a `random.seed(SEED)` **al empezar**, así "Reiniciar datos de la demo" genera exactamente lo mismo que la primera carga (lo comprueba `test_seed_is_repeatable`). Si cambias el orden de las llamadas a `random`, cambian todos los datos: pasa los tests.
-- Mario es siempre el usuario 1 y su habitación de Chamberí la habitación 1 (con la foto `room-01.jpg`).
-- Las fotos se asignan **por orden** (`room_photo(i)`), sin `random`, para no alterar el resto de datos. Si añades fotos a `assets/rooms/`, añade su línea en `CREDITS.md` (lo comprueba `test_room_photos_are_credited`) y usa solo fotos con licencia libre y **sin personas**.
+- Mario es siempre el usuario 1 y su habitación de Chamberí la habitación 1, con `MARIO_FLAT_PHOTOS`: `habitacion-01.jpg` (principal) y las cuatro `chamberi-*.jpg` (salón, comedor, cocina y baño), **todas del mismo piso real**. `habitacion-01` está reservada para él.
+- El resto de anuncios (`listing_photos(i, own_bathroom)`): habitación (principal), salón y cocina, más baño si la habitación tiene baño propio. Se asignan **por orden**, sin `random`, para no alterar el resto de datos. Para añadir fotos, nómbralas por espacio (`habitacion-`, `salon-`, `cocina-`, `bano-`), añade su línea en `CREDITS.md` (lo comprueba `test_room_photos_are_credited`) y usa solo fotos con licencia libre y **sin personas**.
 - Volumen: 51 inquilinos (20 buscan, 28 + Lucía y Tom viven en pisos, + Mario), 8 caseros, 30 habitaciones.
 - Solicitudes de ejemplo (sin `random`, con `seed_request`, que **no** registra eventos): los dos interesados de la habitación de Lavapiés de Carmen, y un **rival de Mario** en la de Chamberí (el mejor candidato que no es Mario), con Lucía a favor y Tom en contra. Carmen empieza con 3 solicitudes pendientes.
 - Precios realistas por zona en `ZONE_PRICE` (€/mes): Usera la más barata, Salamanca la más cara.
 - Nombres y orígenes variados (españoles y Erasmus), todos ficticios.
-- Las 12 fotos son de Wikimedia Commons y de pisos de **otros países**: son ilustrativas, no se presentan como oferta real de Madrid. Varias son CC BY / CC BY-SA: si la app se publica, hay que enlazar `CREDITS.md` desde un sitio visible.
+- Las 26 fotos son de Wikimedia Commons y de pisos de **otros países**: son ilustrativas, no se presentan como oferta real de Madrid. Varias son CC BY / CC BY-SA: si la app se publica, hay que enlazar `CREDITS.md` desde un sitio visible.
 
 ## Métricas e hipótesis
 
@@ -217,6 +223,7 @@ Cada acción relevante se guarda con `db.log_event(user_id, kind, room_id)` y se
 | `solicitar` / `retirar_solicitud` | Envía o retira una solicitud | Conversión del match al alquiler |
 | `aceptar_solicitud` / `rechazar_solicitud` | El casero decide (lo registra el casero) | Conversión |
 | `votar` | Un compañero opina sobre un candidato | **I9**: doble aceptación |
+| `mensaje_privado` | Envía un mensaje en un chat privado (sin habitación) | Cuenta en «Mensajes» junto a `mensaje` |
 | `quitar_inquilino`, `pausar_anuncio`, `reactivar_anuncio` | Gestión del casero | Solo registro |
 
 Estado tras las entrevistas: validadas I1–I7, I9, I10, I12, I13, C1, C2, C4, C5; por poco I8; **no validadas I11** (matching frente a Badi: valoran más el volumen de pisos), **I14** (mantenimiento para inquilinos) y **C6** (comisión a caseros). Consecuencias:

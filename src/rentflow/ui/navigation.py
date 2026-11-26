@@ -52,6 +52,12 @@ def open_chat(room_id, tenant_id):
     go(PAGE_MESSAGES, conversation_id=conv, selected_room=None)
 
 
+def open_direct(user_id, other_id):
+    """Callback: abre (o crea) el chat privado entre dos personas y va a Mensajes."""
+    conv, _ = db.get_or_create_direct(user_id, other_id)
+    go(PAGE_MESSAGES, conversation_id=conv, selected_room=None)
+
+
 def login(user_id):
     st.session_state.user_id = user_id
     user = db.get_user(user_id)

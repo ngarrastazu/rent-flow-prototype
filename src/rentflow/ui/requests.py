@@ -14,7 +14,7 @@ from rentflow.ui.components import (
     verified_badge,
     votes_text,
 )
-from rentflow.ui.navigation import PAGE_MATCHES, PAGE_MY_FLAT, flash, go, open_chat
+from rentflow.ui.navigation import PAGE_MATCHES, PAGE_MY_FLAT, flash, go, open_chat, open_direct
 from rentflow.ui.theme import ICON, badge, badges, empty_state
 
 # ---------------------------------------------------------------- Mis solicitudes
@@ -113,8 +113,13 @@ def home_card(user, room):
             st.caption(room_facts(room, with_bathroom=True))
             person_header(landlord, " · casero")
             rating_line(landlord["id"])
-            st.button("Escribir al casero y a los compañeros", icon=ICON["chat"], key="chathome",
-                      on_click=open_chat, args=(room["id"], user["id"]))
+            b1, b2 = st.columns(2)
+            b1.button("Chat del piso", icon=ICON["chat"], key="chathome", width="stretch",
+                      on_click=open_chat, args=(room["id"], user["id"]),
+                      help="Con el casero y todos los compañeros")
+            b2.button("Mensaje al casero", icon=":material/mail:", key="dmhome", type="tertiary", width="stretch",
+                      on_click=open_direct, args=(user["id"], landlord["id"]),
+                      help="Conversación privada: solo tú y el casero")
     if mates:
         st.markdown("#### Tus compañeros")
         cols = st.columns(min(len(mates), 3))
@@ -126,6 +131,8 @@ def home_card(user, room):
                 if p and my_prefs:
                     st.caption(f"Afinidad de hábitos contigo: **{matching.pair_affinity(my_prefs, p)} %**")
                 rating_line(m["id"])
+                st.button("Enviar mensaje", icon=":material/mail:", key=f"dmhm{m['id']}", type="tertiary",
+                          on_click=open_direct, args=(user["id"], m["id"]))
 
 
 def candidate_card(user, req):
@@ -147,6 +154,8 @@ def candidate_card(user, req):
                 st.caption(f"Afinidad de hábitos contigo: **{matching.pair_affinity(mp, cp)} %** · "
                            + habit_line(cp))
             rating_line(cand["id"])
+            st.button(f"Enviar mensaje a {cand['name'].split()[0]}", icon=":material/mail:", key=f"dmcand{req['id']}",
+                      type="tertiary", on_click=open_direct, args=(user["id"], cand["id"]))
         with c2:
             if my_vote:
                 badges([badge("Te encaja" if my_vote == 1 else "No te encaja",

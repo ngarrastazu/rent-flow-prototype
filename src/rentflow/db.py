@@ -17,6 +17,9 @@ ZONES = [
     "La Latina", "Argüelles", "Moncloa", "Tetuán", "Arganzuela", "Usera",
 ]
 SCHEDULES = ["Mañanas (me levanto temprano)", "Horario normal", "Noches / turnos"]
+# Espacios que puede mostrar una foto del anuncio (la habitación y el resto del piso)
+SPACES = ["Habitación", "Salón", "Comedor", "Cocina", "Baño", "Terraza", "Edificio", "Otra"]
+MAX_PHOTOS = 12  # fotos por anuncio
 
 # Centro aproximado de cada barrio (lat, lon) para el mapa. Es orientativo: no hay direcciones reales.
 ZONE_COORDS = {
@@ -77,10 +80,25 @@ CREATE TABLE IF NOT EXISTS rooms (
     smoking_allowed  INTEGER DEFAULT 0,
     pets_allowed     INTEGER DEFAULT 0,
     description      TEXT,
-    photo            BLOB,
+    photo            BLOB,                -- obsoleto: las fotos están en room_photos (se migra solo)
     active           INTEGER DEFAULT 1,   -- 0 = no aparece en los matches (alquilada o pausada)
     tenant_id        INTEGER REFERENCES users(id)  -- inquilino que la ocupa (NULL = libre)
 );
+
+-- Fotos del anuncio: la habitación y el resto del piso. Una es la principal (portada del anuncio).
+-- `image` = foto subida por el casero; `path` = foto de ejemplo dentro de assets/ (el seed no duplica bytes).
+CREATE TABLE IF NOT EXISTS room_photos (
+    id          INTEGER PRIMARY KEY,
+    room_id     INTEGER NOT NULL REFERENCES rooms(id),
+    image       BLOB,
+    path        TEXT,
+    space       TEXT,                 -- uno de SPACES
+    is_main     INTEGER DEFAULT 0,
+    position    INTEGER DEFAULT 0,
+    created_at  TEXT DEFAULT CURRENT_TIMESTAMP,
+    CHECK (image IS NOT NULL OR path IS NOT NULL)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS one_main_photo ON room_photos(room_id) WHERE is_main = 1;
 
 -- Compañeros que ya viven en el piso
 CREATE TABLE IF NOT EXISTS room_members (
@@ -100,13 +118,20 @@ CREATE TABLE IF NOT EXISTS reviews (
 );
 
 -- Una conversación por inquilino interesado y habitación (casero + compañeros incluidos)
+-- Dos tipos de conversación:
+--   'grupo'   = chat del piso: room_id + tenant_id (el interesado), con el casero y los compañeros.
+--   'privado' = solo dos personas: tenant_id < peer_id (pareja ordenada), sin habitación (room_id NULL).
 CREATE TABLE IF NOT EXISTS conversations (
     id          INTEGER PRIMARY KEY,
     room_id     INTEGER REFERENCES rooms(id),
     tenant_id   INTEGER REFERENCES users(id),
+    kind        TEXT NOT NULL DEFAULT 'grupo' CHECK (kind IN ('grupo', 'privado')),
+    peer_id     INTEGER REFERENCES users(id),
     created_at  TEXT DEFAULT CURRENT_TIMESTAMP,
     UNIQUE (room_id, tenant_id)
 );
+-- Un único chat privado por pareja de personas
+CREATE UNIQUE INDEX IF NOT EXISTS one_direct_chat ON conversations(tenant_id, peer_id) WHERE kind = 'privado';
 
 CREATE TABLE IF NOT EXISTS messages (
     id               INTEGER PRIMARY KEY,
@@ -179,7 +204,20 @@ def init_db() -> None:
         cols = {r["name"] for r in conn.execute("PRAGMA table_info(rooms)")}
         if cols and "tenant_id" not in cols:
             conn.execute("ALTER TABLE rooms ADD COLUMN tenant_id INTEGER REFERENCES users(id)")
+        # ... y antes de los chats privados: tipo de conversación y segunda persona
+        conv_cols = {r["name"] for r in conn.execute("PRAGMA table_info(conversations)")}
+        if conv_cols and "kind" not in conv_cols:
+            conn.execute("ALTER TABLE conversations ADD COLUMN kind TEXT NOT NULL DEFAULT 'grupo'")
+            conn.execute("ALTER TABLE conversations ADD COLUMN peer_id INTEGER REFERENCES users(id)")
         conn.executescript(SCHEMA)
+        # Anuncios con la foto única antigua (rooms.photo): pasa a ser su foto principal en room_photos
+        if "photo" not in {r["name"] for r in conn.execute("PRAGMA table_info(rooms)")}:
+            return
+        conn.execute("""INSERT INTO room_photos (room_id, image, space, is_main)
+                        SELECT id, photo, 'Habitación', 1 FROM rooms r
+                        WHERE photo IS NOT NULL
+                          AND NOT EXISTS (SELECT 1 FROM room_photos p WHERE p.room_id = r.id)""")
+        conn.execute("UPDATE rooms SET photo = NULL WHERE photo IS NOT NULL")
 
 
 def query(sql: str, params: Sequence[Any] = ()) -> list[Row]:
@@ -256,19 +294,81 @@ def save_preferences(user_id, budget_min, budget_max, zones, move_in, schedule,
 # ---------- Habitaciones ----------
 
 def create_room(landlord_id, title, zone, price, size_m2, own_bathroom, available_from,
-                smoking_allowed, pets_allowed, description, photo=None, members=()) -> int:
-    """Crea la habitación y sus compañeros en una sola transacción."""
+                smoking_allowed, pets_allowed, description, photo=None, members=(), photos=()) -> int:
+    """Crea la habitación, sus compañeros y sus fotos en una sola transacción.
+
+    `photos`: lista de dicts {"image": bytes} o {"path": "rooms/x.jpg"}, con "space" opcional; la primera
+    es la principal. `photo` (bytes) se mantiene por compatibilidad: equivale a una sola foto de la habitación.
+    """
+    photos = list(photos) or ([{"image": photo, "space": "Habitación"}] if photo else [])
     with connect() as conn:
         room_id = conn.execute(
             """INSERT INTO rooms (landlord_id, title, zone, price, size_m2, own_bathroom, available_from,
-                                  smoking_allowed, pets_allowed, description, photo)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                                  smoking_allowed, pets_allowed, description)
+               VALUES (?,?,?,?,?,?,?,?,?,?)""",
             (landlord_id, title, zone, price, size_m2, int(own_bathroom), available_from,
-             int(smoking_allowed), int(pets_allowed), description, photo),
+             int(smoking_allowed), int(pets_allowed), description),
         ).lastrowid
         conn.executemany("INSERT INTO room_members (room_id, user_id) VALUES (?, ?)",
                          [(room_id, uid) for uid in members])
+        _insert_photos(conn, room_id, photos)
     return room_id
+
+
+# ---------- Fotos del anuncio ----------
+
+def _insert_photos(conn, room_id, photos):
+    """Añade fotos al final; si el anuncio no tenía principal, la primera nueva pasa a serlo."""
+    row = conn.execute("SELECT COALESCE(MAX(position), -1) AS pos, COALESCE(MAX(is_main), 0) AS has_main "
+                       "FROM room_photos WHERE room_id = ?", (room_id,)).fetchone()
+    pos, has_main = row["pos"], row["has_main"]
+    for i, ph in enumerate(photos):
+        conn.execute(
+            "INSERT INTO room_photos (room_id, image, path, space, is_main, position) VALUES (?,?,?,?,?,?)",
+            (room_id, ph.get("image"), ph.get("path"), ph.get("space") or "Otra",
+             int(not has_main and i == 0), pos + 1 + i),
+        )
+
+
+def add_room_photos(room_id, photos):
+    with connect() as conn:
+        _insert_photos(conn, room_id, photos)
+
+
+def room_photos(room_id):
+    """Fotos del anuncio: la principal primero y luego en el orden en que se subieron."""
+    return query("SELECT * FROM room_photos WHERE room_id = ? ORDER BY is_main DESC, position, id", (room_id,))
+
+
+def main_photo(room_id):
+    """Foto principal (portada) del anuncio, o None si no tiene fotos."""
+    return query_one("SELECT * FROM room_photos WHERE room_id = ? ORDER BY is_main DESC, position, id LIMIT 1",
+                     (room_id,))
+
+
+def count_photos(room_id):
+    return query_one("SELECT COUNT(*) AS n FROM room_photos WHERE room_id = ?", (room_id,))["n"]
+
+
+def set_main_photo(room_id, photo_id):
+    with connect() as conn:
+        conn.execute("UPDATE room_photos SET is_main = 0 WHERE room_id = ?", (room_id,))
+        conn.execute("UPDATE room_photos SET is_main = 1 WHERE room_id = ? AND id = ?", (room_id, photo_id))
+
+
+def set_photo_space(room_id, photo_id, space):
+    execute("UPDATE room_photos SET space = ? WHERE room_id = ? AND id = ?", (space, room_id, photo_id))
+
+
+def delete_room_photo(room_id, photo_id):
+    """Borra una foto; si era la principal, la siguiente pasa a serlo."""
+    with connect() as conn:
+        conn.execute("DELETE FROM room_photos WHERE room_id = ? AND id = ?", (room_id, photo_id))
+        has_main = conn.execute("SELECT 1 FROM room_photos WHERE room_id = ? AND is_main = 1", (room_id,)).fetchone()
+        if not has_main:
+            conn.execute("""UPDATE room_photos SET is_main = 1 WHERE id = (
+                                SELECT id FROM room_photos WHERE room_id = ? ORDER BY position, id LIMIT 1)""",
+                         (room_id,))
 
 
 def get_room(room_id):
@@ -485,18 +585,52 @@ def get_or_create_conversation(room_id, tenant_id):
     return execute("INSERT INTO conversations (room_id, tenant_id) VALUES (?, ?)", (room_id, tenant_id)), True
 
 
+LAST_AT = "COALESCE((SELECT MAX(x.id) FROM messages x WHERE x.conversation_id = c.id), 0)"
+
+
 def conversations_of(user_id):
-    """Conversaciones en las que participa el usuario: como inquilino, casero o compañero."""
+    """Chats de piso (grupo) en los que participa el usuario: como interesado, casero o compañero.
+
+    Ordenados por el último mensaje (last_msg = id del último mensaje, 0 si no hay).
+    """
     return query(
-        """SELECT DISTINCT c.*, r.title, r.zone, r.landlord_id, t.name AS tenant_name
-           FROM conversations c
-           JOIN rooms r ON r.id = c.room_id
-           JOIN users t ON t.id = c.tenant_id
-           LEFT JOIN room_members m ON m.room_id = c.room_id
-           WHERE c.tenant_id = ? OR r.landlord_id = ? OR m.user_id = ?
-           ORDER BY c.created_at DESC""",
+        f"""SELECT DISTINCT c.*, r.title, r.zone, r.landlord_id, t.name AS tenant_name, {LAST_AT} AS last_msg
+            FROM conversations c
+            JOIN rooms r ON r.id = c.room_id
+            JOIN users t ON t.id = c.tenant_id
+            LEFT JOIN room_members m ON m.room_id = c.room_id
+            WHERE c.kind = 'grupo' AND (c.tenant_id = ? OR r.landlord_id = ? OR m.user_id = ?)
+            ORDER BY last_msg DESC, c.id DESC""",
         (user_id, user_id, user_id),
     )
+
+
+def get_or_create_direct(user_a, user_b):
+    """Chat privado entre dos personas (uno por pareja). Devuelve (id, creado)."""
+    if user_a == user_b:
+        raise ValueError("No puedes escribirte a ti mismo.")
+    lo, hi = sorted((user_a, user_b))
+    conv = query_one("SELECT id FROM conversations WHERE kind = 'privado' AND tenant_id = ? AND peer_id = ?",
+                     (lo, hi))
+    if conv:
+        return conv["id"], False
+    return execute("INSERT INTO conversations (kind, tenant_id, peer_id) VALUES ('privado', ?, ?)", (lo, hi)), True
+
+
+def direct_conversations_of(user_id):
+    """Chats privados del usuario, con los datos de la otra persona (other_*), por último mensaje."""
+    return query(
+        f"""SELECT c.*, o.id AS other_id, o.name AS other_name, o.role AS other_role, {LAST_AT} AS last_msg
+            FROM conversations c
+            JOIN users o ON o.id = CASE WHEN c.tenant_id = ? THEN c.peer_id ELSE c.tenant_id END
+            WHERE c.kind = 'privado' AND (c.tenant_id = ? OR c.peer_id = ?)
+            ORDER BY last_msg DESC, c.id DESC""",
+        (user_id, user_id, user_id),
+    )
+
+
+def get_conversation(conversation_id):
+    return query_one("SELECT * FROM conversations WHERE id = ?", (conversation_id,))
 
 
 def messages_of(conversation_id):
@@ -522,7 +656,7 @@ def send_system_message(conversation_id, text):
 def interested_in(room_id):
     return query(
         """SELECT c.*, u.name AS tenant_name FROM conversations c JOIN users u ON u.id = c.tenant_id
-           WHERE c.room_id = ? ORDER BY c.created_at DESC""",
+           WHERE c.room_id = ? AND c.kind = 'grupo' ORDER BY c.created_at DESC""",
         (room_id,),
     )
 

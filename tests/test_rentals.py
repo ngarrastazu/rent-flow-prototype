@@ -148,3 +148,64 @@ def test_migration_adds_tenant_column(tmp_path, monkeypatch):
         conn.execute("INSERT INTO rooms (landlord_id) VALUES (1)")
     db.init_db()
     assert db.get_room(1)["tenant_id"] is None
+
+
+# ---------- Fotos del anuncio ----------
+
+def test_photos_main_and_order(temp_db):
+    landlord = db.create_user("Casera", 50, "casero", "", "")
+    room = db.create_room(landlord, "t", "Usera", 400, 10, False, "2027-01-01", False, False, "",
+                          photos=[{"path": "rooms/habitacion-02.jpg", "space": "Habitación"},
+                                  {"image": b"x", "space": "Cocina"}])
+    photos = db.room_photos(room)
+    assert [p["space"] for p in photos] == ["Habitación", "Cocina"] and photos[0]["is_main"]
+    db.add_room_photos(room, [{"image": b"y"}])
+    assert db.count_photos(room) == 3 and db.room_photos(room)[2]["space"] == "Otra"
+    db.set_main_photo(room, photos[1]["id"])
+    assert db.main_photo(room)["space"] == "Cocina"
+    assert sum(p["is_main"] for p in db.room_photos(room)) == 1
+    db.delete_room_photo(room, photos[1]["id"])  # borrar la principal: pasa a serlo la primera que queda
+    assert db.main_photo(room)["id"] == photos[0]["id"]
+    db.set_photo_space(room, photos[0]["id"], "Salón")
+    assert db.main_photo(room)["space"] == "Salón"
+
+
+def test_legacy_single_photo_is_migrated(temp_db):
+    """Un anuncio con la foto antigua en rooms.photo la conserva como principal tras arrancar."""
+    landlord = db.create_user("Casera", 50, "casero", "", "")
+    room = db.create_room(landlord, "t", "Usera", 400, 10, False, "2027-01-01", False, False, "")
+    db.execute("UPDATE rooms SET photo = ? WHERE id = ?", (b"legacy", room))
+    db.init_db()
+    main = db.main_photo(room)
+    assert main["image"] == b"legacy" and main["is_main"] == 1
+    assert db.get_room(room)["photo"] is None
+    db.init_db()  # idempotente
+    assert db.count_photos(room) == 1
+
+
+# ---------- Chats privados ----------
+
+def test_direct_chat_is_unique_per_pair_and_private(seeded_db):
+    carmen = landlord_of(CHAMBERI)
+    lucia = mate_ids(CHAMBERI)[0]
+    conv, created = db.get_or_create_direct(MARIO, carmen)
+    assert created and db.get_or_create_direct(carmen, MARIO) == (conv, False)
+    with pytest.raises(ValueError):
+        db.get_or_create_direct(MARIO, MARIO)
+    db.send_message(conv, MARIO, "Hola Carmen, solo para ti")
+
+    assert [c["other_name"] for c in db.direct_conversations_of(MARIO)] == ["Carmen Ruiz"]
+    assert [c["other_name"] for c in db.direct_conversations_of(carmen)] == ["Mario Rossi"]
+    assert db.direct_conversations_of(lucia) == []  # vive en el piso, pero no ve el chat privado
+    assert all(c["id"] != conv for c in db.conversations_of(lucia))
+    assert all(c["id"] != conv for c in db.conversations_of(carmen))  # no se mezcla con los chats de piso
+    assert all(c["kind"] == "grupo" for c in db.interested_in(CHAMBERI))
+
+
+def test_conversations_sorted_by_last_message(seeded_db):
+    carmen = landlord_of(CHAMBERI)
+    first, _ = db.get_or_create_direct(carmen, mate_ids(CHAMBERI)[0])
+    second, _ = db.get_or_create_direct(carmen, mate_ids(CHAMBERI)[1])
+    db.send_message(second, carmen, "Hola")
+    db.send_message(first, carmen, "Hola otra vez")  # el último mensaje es en `first`
+    assert [c["id"] for c in db.direct_conversations_of(carmen)][:2] == [first, second]

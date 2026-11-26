@@ -87,14 +87,49 @@ def about_fields(user):
             "origin": origin.strip(), "bio": bio.strip()}
 
 
+def photo_source(photo):
+    """Lo que necesita st.image: los bytes subidos o la ruta absoluta de una foto de ejemplo de assets/."""
+    if photo is None:
+        return str(ROOM_PLACEHOLDER)
+    return photo["image"] if photo["image"] is not None else str(db.PROJECT_ROOT / "assets" / photo["path"])
+
+
 def room_photo(room, key, caption=None):
-    """Foto de la habitación (o la imagen de reserva) en un contenedor con `key` para el CSS.
+    """Foto principal del anuncio (o la imagen de reserva) en un contenedor con `key` para el CSS.
 
     key = "thumb<algo>" -> miniatura 3:2 recortada; key = "roomphoto" -> foto grande 16:9 de la ficha.
     """
     with st.container(key=key):
-        st.image(room["photo"] or str(ROOM_PLACEHOLDER), width="stretch",
-                 caption=caption)
+        st.image(photo_source(db.main_photo(room["id"])), width="stretch", caption=caption)
+
+
+def space_labels(photos):
+    """Etiqueta de cada foto según su espacio, numerando las repetidas: «Salón», «Salón 2»…"""
+    seen, labels = {}, []
+    for ph in photos:
+        space = ph["space"] or "Otra"
+        seen[space] = seen.get(space, 0) + 1
+        labels.append(space if seen[space] == 1 else f"{space} {seen[space]}")
+    return labels
+
+
+def room_gallery(room):
+    """Galería de la ficha: foto grande y, debajo, un selector por espacio (habitación, salón, cocina…)."""
+    photos = db.room_photos(room["id"])
+    if len(photos) <= 1:
+        room_photo(room, key="roomphoto")
+        return
+    labels = space_labels(photos)
+    key = f"gal{room['id']}"
+    if not isinstance(st.session_state.get(key), int) or st.session_state[key] >= len(photos):
+        st.session_state[key] = 0  # la principal
+    with st.container(key="roomphoto"):
+        st.image(photo_source(photos[st.session_state[key]]), width="stretch")
+    # Solo texto (sin iconos) y a todo el ancho: con 5 espacios los iconos no caben en la columna
+    st.segmented_control("Fotos del piso", list(range(len(photos))), key=key, label_visibility="collapsed",
+                         format_func=lambda i: labels[i], width="stretch")
+    shown = st.session_state.get(key) or 0
+    st.caption(f"Foto {shown + 1} de {len(photos)} · {labels[shown]}")
 
 
 def room_badges(room):

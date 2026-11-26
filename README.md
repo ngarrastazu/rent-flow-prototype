@@ -24,16 +24,19 @@ la app funciona, pero el mapa sale sin calles.
 1. Pulsa **Probar como Mario (demo)**.
 2. **Mis matches**: su primer resultado es la habitación de Chamberí con un **94 %** de compatibilidad.
    Prueba los filtros (precio, zona, baño propio) y cambia a **Mapa**: pulsa un punto para ver su resumen.
-3. **Ver detalles**: compañeros (Lucía y Tom) con sus hábitos, el casero verificado y el desglose
-   "Por qué este match". Activa **Ver reseñas**.
+3. **Ver detalles**: galería del piso (habitación, salón, comedor, cocina y baño), compañeros (Lucía y Tom)
+   con sus hábitos, el casero verificado y el desglose "Por qué este match". Activa **Ver reseñas**.
 4. **Solicitar esta habitación**: Mario se presenta, elige fecha de entrada y estancia. En **Mis solicitudes**
-   ve el estado y cuántos compañeros le han dado el visto bueno. (También puede **Contactar** por el chat.)
+   ve el estado y cuántos compañeros le han dado el visto bueno. También puede **Contactar** (chat del piso, con
+   el casero y los compañeros) o **Enviar mensaje** solo al casero o solo a un compañero (chat privado).
 5. *(Opcional)* Entra como **Lucía Martín** o **Tom Becker**: en **Mi piso** ven a los candidatos (Mario y un rival)
    con su afinidad de hábitos y opinan **Me encaja / No me encaja**.
 6. Entra como **Carmen Ruiz · casero**: en **Mis habitaciones**, pestaña **Solicitudes** de la habitación de
    Chamberí, compara a Mario (94 %) con el rival y la opinión de los compañeros. **Aceptar** → la habitación queda
    alquilada, el rival recibe un aviso y Mario aparece en **Mis inquilinos**, desde donde se le puede escribir o dar
    de baja. Las pestañas **Más compatibles** y **Chats** muestran la búsqueda inversa y las conversaciones.
+   Con **Fotos** gestiona las fotos del anuncio (principal, espacio de cada una, añadir y borrar); en
+   **Publicar habitación** se suben varias a la vez y se elige la principal antes de publicar.
 7. Vuelve a entrar como Mario: **Mi piso** muestra su nueva habitación y sus compañeros; el chat tiene los avisos
    de RentFlow. En **Mi perfil y hábitos** puede editar a qué se dedica y su descripción.
 8. **Métricas (equipo)**: cada acción queda registrada y se compara con las Test Cards (I9, I12, chat) y con
@@ -72,7 +75,8 @@ Los pesos están en `WEIGHTS`, al principio de `src/rentflow/matching.py`: cambi
 
 ## Fotos
 
-Las fotos de las habitaciones son de **Wikimedia Commons**, con licencia libre y sin personas. Son ilustrativas
-(pisos de otros países), no oferta real de Madrid. Autor, licencia y enlace de cada una en
+Las fotos de las habitaciones y de los pisos (salón, cocina, baño…) son de **Wikimedia Commons**, con licencia
+libre y sin personas. Son ilustrativas (pisos de otros países), no oferta real de Madrid. Las del piso de Mario
+son todas del mismo piso. Autor, licencia y enlace de cada una en
 [assets/rooms/CREDITS.md](assets/rooms/CREDITS.md). Varias exigen citar al autor: si publicáis la app,
 enlazad ese archivo desde un sitio visible.

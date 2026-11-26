@@ -5,8 +5,8 @@ import streamlit as st
 
 from rentflow import db, rentals
 from rentflow.ui.components import person_header, rating_line, room_facts, room_photo
-from rentflow.ui.navigation import PAGE_MY_ROOMS, flash, go, open_chat
-from rentflow.ui.theme import ICON, badge, empty_state
+from rentflow.ui.navigation import PAGE_MY_ROOMS, flash, go, open_direct
+from rentflow.ui.theme import badge, empty_state
 
 KIND_LABEL = {
     "ocupante": ("Vive en esta habitación", "verified"),
@@ -23,8 +23,8 @@ def page_residents(user):
         return
 
     people = {r["id"] for r in residents}
-    st.caption(f"{len(people)} personas viven en tus pisos. Escríbeles o dales de baja cuando dejen la "
-               "habitación: la habitación vuelve a publicarse.")
+    st.caption(f"{len(people)} personas viven en tus pisos. Envíales un mensaje privado o dales de baja cuando "
+               "dejen la habitación: la habitación vuelve a publicarse.")
     by_room = {}
     for r in residents:
         by_room.setdefault(r["room_id"], []).append(r)
@@ -59,8 +59,9 @@ def resident_row(user, room, person):
             rating_line(person["id"])
         with c2:
             b1, b2 = st.columns(2)
-            b1.button("Escribir", icon=ICON["chat"], key=f"wr{room['id']}_{person['id']}", width="stretch",
-                      on_click=open_chat, args=(room["id"], person["id"]))
+            b1.button("Enviar mensaje", icon=":material/mail:", key=f"wr{room['id']}_{person['id']}", width="stretch",
+                      on_click=open_direct, args=(user["id"], person["id"]),
+                      help="Conversación privada: solo tú y esta persona")
             b2.button("Dar de baja", icon=":material/person_remove:", key=f"rm{room['id']}_{person['id']}",
                       type="tertiary", width="stretch",
                       on_click=lambda: st.session_state.update(_remove_dialog=(room["id"], person["id"])))

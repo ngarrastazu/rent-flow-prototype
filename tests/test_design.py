@@ -34,7 +34,7 @@ def test_room_photos_are_credited():
     """Cada foto de ejemplo (licencia libre) debe figurar en CREDITS.md con su autor y licencia."""
     rooms = theme.ASSETS / "rooms"
     credits = (rooms / "CREDITS.md").read_text(encoding="utf-8")
-    photos = sorted(rooms.glob("room-*.jpg"))
+    photos = sorted(p for p in rooms.glob("*.jpg") if p != theme.ROOM_PLACEHOLDER)
     assert photos and theme.ROOM_PLACEHOLDER.is_file()
     for photo in photos:
         assert f"`{photo.name}`" in credits, photo.name

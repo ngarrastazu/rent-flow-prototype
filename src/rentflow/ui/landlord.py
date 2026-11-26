@@ -7,13 +7,14 @@ import streamlit as st
 from rentflow import db, matching, rentals
 from rentflow.ui.components import (
     about_fields,
+    photo_source,
     room_badges,
     room_facts,
     room_photo,
     verified_badge,
     votes_text,
 )
-from rentflow.ui.navigation import PAGE_MESSAGES, PAGE_PUBLISH, flash, go, open_chat
+from rentflow.ui.navigation import PAGE_MESSAGES, PAGE_PUBLISH, flash, go, open_chat, open_direct
 from rentflow.ui.theme import ICON, badge, badges, empty_state, score_block, score_style
 
 
@@ -34,6 +35,8 @@ def page_my_rooms(user):
         room_card(user, room)
     if (req_id := st.session_state.get("_accept_dialog")) is not None:
         accept_dialog(user, req_id)
+    if (room_id := st.session_state.get("_photos_dialog")) is not None:
+        photos_dialog(user, room_id)
 
 
 def room_status(room):
@@ -55,6 +58,9 @@ def room_card(user, room):
                                                                      or "sin compañeros"))
             badges(room_badges(room))
         with act_col:
+            st.button(f"Fotos ({db.count_photos(room['id'])})", icon=":material/photo_library:",
+                      key=f"photos{room['id']}", type="tertiary",
+                      on_click=lambda: st.session_state.update(_photos_dialog=room["id"]))
             if not room["tenant_id"]:
                 st.button("Reactivar" if not room["active"] else "Pausar anuncio",
                           icon=":material/play_arrow:" if not room["active"] else ":material/pause:",
@@ -66,8 +72,8 @@ def room_card(user, room):
             c1, c2 = st.columns([4, 1.4], vertical_alignment="center")
             c1.caption(f"Alquilada a **{occupant['name']}**. Puedes escribirle o darle de baja desde "
                        "«Mis inquilinos».")
-            c2.button("Escribir", icon=ICON["chat"], key=f"occ{room['id']}", type="tertiary",
-                      on_click=open_chat, args=(room["id"], occupant["id"]))
+            c2.button("Enviar mensaje", icon=":material/mail:", key=f"occ{room['id']}", type="tertiary",
+                      on_click=open_direct, args=(user["id"], occupant["id"]))
             return
 
         pending = db.requests_for_room(room["id"])
@@ -125,8 +131,12 @@ def request_row(room, req, mates_prefs):
                       on_click=lambda: st.session_state.update(_accept_dialog=req["id"]))
             st.button("Rechazar", key=f"rej{req['id']}", type="tertiary",
                       on_click=reject, args=(room["landlord_id"], req["id"]))
-            st.button("Chat", icon=ICON["chat"], key=f"rqchat{req['id']}", type="tertiary",
-                      on_click=open_chat, args=(room["id"], cand["id"]))
+            st.button("Chat del piso", icon=ICON["chat"], key=f"rqchat{req['id']}", type="tertiary",
+                      on_click=open_chat, args=(room["id"], cand["id"]),
+                      help="Con el candidato y los compañeros: ahí está su solicitud")
+            st.button("Mensaje privado", icon=":material/mail:", key=f"rqdm{req['id']}", type="tertiary",
+                      on_click=open_direct, args=(room["landlord_id"], cand["id"]),
+                      help="Solo tú y el candidato")
 
 
 @st.dialog("Aceptar solicitud", on_dismiss=lambda: st.session_state.pop("_accept_dialog", None))
@@ -159,6 +169,53 @@ def accept_dialog(user, request_id):
         st.rerun()
 
 
+@st.dialog("Fotos del anuncio", width="large",
+           on_dismiss=lambda: st.session_state.pop("_photos_dialog", None))
+def photos_dialog(user, room_id):
+    """Gestor de fotos: principal, espacio de cada foto, borrar y añadir. Los cambios se guardan al momento."""
+    room = db.get_room(room_id)
+    if not room or room["landlord_id"] != user["id"]:
+        st.session_state.pop("_photos_dialog", None)
+        st.caption("Esta habitación no es tuya.")
+        return
+    photos = db.room_photos(room_id)
+    st.markdown(f"**{room['title']}**")
+    st.caption("La foto principal es la portada del anuncio en los matches y en el mapa. Enseña también el resto "
+               f"del piso: salón, cocina, baño… (máximo {db.MAX_PHOTOS} fotos).")
+    if not photos:
+        st.caption("Este anuncio aún no tiene fotos.")
+    cols = st.columns(3)
+    for i, ph in enumerate(photos):
+        with cols[i % 3], st.container(border=True, key=f"cardph{ph['id']}"):
+            with st.container(key=f"thumbph{ph['id']}"):
+                st.image(photo_source(ph), width="stretch")
+            st.selectbox("Espacio", db.SPACES, index=db.SPACES.index(ph["space"]) if ph["space"] in db.SPACES
+                         else len(db.SPACES) - 1, key=f"sp{ph['id']}", label_visibility="collapsed",
+                         on_change=lambda pid=ph["id"]: db.set_photo_space(room_id, pid,
+                                                                             st.session_state[f"sp{pid}"]))
+            b1, b2 = st.columns(2)
+            if ph["is_main"]:
+                b1.markdown(badge("Principal", "verified"), unsafe_allow_html=True)
+            else:
+                b1.button("Principal", icon=":material/star:", key=f"mn{ph['id']}", type="tertiary",
+                          on_click=db.set_main_photo, args=(room_id, ph["id"]))
+            b2.button("Eliminar", icon=":material/delete:", key=f"dl{ph['id']}", type="tertiary",
+                      on_click=db.delete_room_photo, args=(room_id, ph["id"]))
+
+    room_left = db.MAX_PHOTOS - len(photos)
+    if room_left > 0:
+        n = st.session_state.get("_photos_upload_n", 0)  # cambia la key para vaciar el selector tras subir
+        files = st.file_uploader("Añadir fotos", type=["jpg", "jpeg", "png"], accept_multiple_files=True,
+                                 key=f"addph{room_id}_{n}")
+        if files and st.button(f"Añadir {min(len(files), room_left)} fotos", icon=":material/add_photo_alternate:"):
+            db.add_room_photos(room_id, [{"image": f.getvalue(), "space": "Otra"} for f in files[:room_left]])
+            st.session_state._photos_upload_n = n + 1
+            st.rerun(scope="fragment")
+    if st.button("Hecho", type="primary", width="stretch"):
+        st.session_state.pop("_photos_dialog", None)
+        st.rerun()
+
+
 def reject(landlord_id, request_id):
     try:
         rentals.reject_request(request_id, landlord_id)
@@ -181,7 +238,10 @@ def page_publish(user):
     living = db.rooms_lived_in()
     available_mates = {u["id"]: f"{u['name']} ({u['age']})"
                        for u in db.list_users("inquilino") if u["id"] not in living}
-    with st.container(key="narrow"), st.form("publish", clear_on_submit=True):
+    narrow = st.container(key="narrow")  # una sola key por página: fotos y formulario van dentro
+    with narrow:
+        photos = publish_photos_section()
+    with narrow, st.form("publish", clear_on_submit=True):
         st.markdown("#### La habitación")
         title = st.text_input("Título", placeholder="Habitación exterior en Malasaña")
         c1, c2, c3, c4 = st.columns(4)
@@ -189,8 +249,8 @@ def page_publish(user):
         price = c2.number_input("Precio (€/mes)", 200, 2000, 550, step=10)
         size = c3.number_input("Tamaño (m²)", 5, 40, 12)
         available = c4.date_input("Disponible desde", date.today())
-        description = st.text_area("Descripción", height=100)
-        photo = st.file_uploader("Foto", type=["jpg", "jpeg", "png"])
+        description = st.text_area("Descripción", height=100,
+                                   placeholder="Cómo es la habitación y el piso, qué incluye, transporte cerca…")
 
         st.markdown("#### Normas y compañeros")
         c1, c2, c3 = st.columns(3)
@@ -204,9 +264,43 @@ def page_publish(user):
                 st.error("Ponle un título.")
             else:
                 db.create_room(user["id"], title.strip(), zone, int(price), int(size), own_bathroom,
-                               available.isoformat(), smoking, pets, description,
-                               photo.getvalue() if photo else None, members)
-                st.success("¡Publicada! Ya aparece en los matches de los inquilinos compatibles.")
+                               available.isoformat(), smoking, pets, description, members=members,
+                               photos=photos)
+                st.session_state._publish_n = st.session_state.get("_publish_n", 0) + 1  # vacía las fotos
+                flash(f"¡Publicada con {len(photos)} fotos! Ya aparece en los matches de los inquilinos "
+                      "compatibles." if photos else "¡Publicada! Puedes añadir fotos desde «Mis habitaciones».")
+                st.rerun()
+
+
+def publish_photos_section():
+    """Fotos del anuncio antes de publicar: subirlas, ver miniaturas, elegir espacio y foto principal.
+
+    Va fuera del formulario para poder ver las fotos y ajustarlas antes de enviar. Devuelve la lista
+    para db.create_room (la principal primero).
+    """
+    n = st.session_state.get("_publish_n", 0)  # cambia tras publicar para vaciar el selector
+    st.markdown("#### Fotos")
+    files = st.file_uploader(
+        "Fotos de la habitación y del piso", type=["jpg", "jpeg", "png"], accept_multiple_files=True,
+        key=f"pubph{n}", help=f"Hasta {db.MAX_PHOTOS}. Elige la principal: será la portada del anuncio.")
+    files = (files or [])[: db.MAX_PHOTOS]
+    if not files:
+        st.caption("Un anuncio completo enseña la habitación, el salón, la cocina y el baño.")
+        return []
+    main = st.radio("Foto principal", range(len(files)), key=f"pubmain{n}", horizontal=True,
+                    format_func=lambda i: f"Foto {i + 1}")
+    cols = st.columns(4)
+    spaces = []
+    for i, f in enumerate(files):
+        with cols[i % 4], st.container(border=True, key=f"cardpub{n}_{i}"):
+            with st.container(key=f"thumbpub{n}_{i}"):
+                st.image(f.getvalue(), width="stretch")
+            spaces.append(st.selectbox(f"Foto {i + 1}", db.SPACES, index=0 if i == 0 else len(db.SPACES) - 1,
+                                       key=f"pubsp{n}_{i}"))
+            if i == main:
+                st.markdown(badge("Principal", "verified"), unsafe_allow_html=True)
+    order = [main] + [i for i in range(len(files)) if i != main]
+    return [{"image": files[i].getvalue(), "space": spaces[i]} for i in order]
 
 
 def page_landlord_profile(user):
