@@ -78,7 +78,8 @@ CREATE TABLE IF NOT EXISTS rooms (
     pets_allowed     INTEGER DEFAULT 0,
     description      TEXT,
     photo            BLOB,
-    active           INTEGER DEFAULT 1
+    active           INTEGER DEFAULT 1,   -- 0 = no aparece en los matches (alquilada o pausada)
+    tenant_id        INTEGER REFERENCES users(id)  -- inquilino que la ocupa (NULL = libre)
 );
 
 -- Compañeros que ya viven en el piso
@@ -115,11 +116,39 @@ CREATE TABLE IF NOT EXISTS messages (
     created_at       TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Solicitudes de un inquilino para quedarse una habitación.
+-- Estados: pendiente -> aceptada | rechazada | retirada (por el inquilino) | cerrada (por el sistema:
+-- la habitación se alquiló a otra persona o el inquilino encontró otra).
+CREATE TABLE IF NOT EXISTS requests (
+    id           INTEGER PRIMARY KEY,
+    room_id      INTEGER NOT NULL REFERENCES rooms(id),
+    tenant_id    INTEGER NOT NULL REFERENCES users(id),
+    message      TEXT,
+    move_in      TEXT,                -- fecha ISO deseada de entrada
+    months       INTEGER,             -- estancia prevista
+    status       TEXT NOT NULL DEFAULT 'pendiente'
+                 CHECK (status IN ('pendiente', 'aceptada', 'rechazada', 'retirada', 'cerrada')),
+    note         TEXT,                -- motivo del rechazo o del cierre
+    created_at   TEXT DEFAULT CURRENT_TIMESTAMP,
+    decided_at   TEXT
+);
+-- Como mucho una solicitud pendiente por inquilino y habitación
+CREATE UNIQUE INDEX IF NOT EXISTS one_pending_request ON requests(room_id, tenant_id) WHERE status = 'pendiente';
+
+-- Opinión de los compañeros del piso sobre un candidato ("doble aceptación")
+CREATE TABLE IF NOT EXISTS request_votes (
+    request_id  INTEGER NOT NULL REFERENCES requests(id),
+    user_id     INTEGER NOT NULL REFERENCES users(id),
+    vote        INTEGER NOT NULL CHECK (vote IN (-1, 1)),
+    created_at  TEXT DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (request_id, user_id)
+);
+
 -- Registro de acciones para medir las hipótesis (ver la página "Métricas")
 CREATE TABLE IF NOT EXISTS events (
     id          INTEGER PRIMARY KEY,
     user_id     INTEGER,
-    kind        TEXT,     -- ver_matches, ver_detalle, ver_resenas, contactar, mensaje, resena
+    kind        TEXT,     -- ver_matches, ver_detalle, solicitar, aceptar_solicitud... (ver CLAUDE.md)
     room_id     INTEGER,
     created_at  TEXT DEFAULT CURRENT_TIMESTAMP
 );
@@ -146,6 +175,10 @@ def connect() -> Iterator[sqlite3.Connection]:
 def init_db() -> None:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     with connect() as conn:
+        # Bases de datos creadas antes de las solicitudes: añade la columna que falta (no se pierden datos)
+        cols = {r["name"] for r in conn.execute("PRAGMA table_info(rooms)")}
+        if cols and "tenant_id" not in cols:
+            conn.execute("ALTER TABLE rooms ADD COLUMN tenant_id INTEGER REFERENCES users(id)")
         conn.executescript(SCHEMA)
 
 
@@ -259,8 +292,168 @@ def roommates(room_id):
 
 
 def rooms_lived_in():
-    """IDs de inquilinos que ya viven en algún piso (no buscan habitación)."""
-    return {r["user_id"] for r in query("SELECT user_id FROM room_members")}
+    """IDs de inquilinos que ya viven en algún piso (no buscan habitación): compañeros y ocupantes."""
+    return {r["user_id"] for r in query(
+        "SELECT user_id FROM room_members UNION SELECT tenant_id FROM rooms WHERE tenant_id IS NOT NULL")}
+
+
+def occupied_room(user_id):
+    """Habitación que ocupa el inquilino (tras aceptarse su solicitud), o None."""
+    return query_one("SELECT * FROM rooms WHERE tenant_id = ? ORDER BY id LIMIT 1", (user_id,))
+
+
+def member_rooms(user_id):
+    """Habitaciones de pisos donde el usuario ya vive como compañero."""
+    return query(
+        """SELECT r.* FROM rooms r JOIN room_members m ON m.room_id = r.id
+           WHERE m.user_id = ? ORDER BY r.id""",
+        (user_id,),
+    )
+
+
+def residents_of_landlord(landlord_id):
+    """Quién vive en los pisos del casero: el ocupante de cada habitación y los compañeros del piso.
+
+    kind = 'ocupante' | 'compañero'; since = fecha en que se aceptó la solicitud (solo ocupantes).
+    """
+    return query(
+        """SELECT r.id AS room_id, u.*, 'ocupante' AS kind,
+                  (SELECT MAX(q.decided_at) FROM requests q
+                   WHERE q.room_id = r.id AND q.tenant_id = u.id AND q.status = 'aceptada') AS since
+           FROM rooms r JOIN users u ON u.id = r.tenant_id
+           WHERE r.landlord_id = ?
+           UNION ALL
+           SELECT r.id AS room_id, u.*, 'compañero' AS kind, NULL AS since
+           FROM rooms r JOIN room_members m ON m.room_id = r.id JOIN users u ON u.id = m.user_id
+           WHERE r.landlord_id = ?
+           ORDER BY room_id DESC, kind DESC, name""",
+        (landlord_id, landlord_id),
+    )
+
+
+def set_room_active(room_id, active):
+    execute("UPDATE rooms SET active = ? WHERE id = ?", (int(active), room_id))
+
+
+def release_room(room_id):
+    """El ocupante deja la habitación: queda libre y se vuelve a publicar."""
+    execute("UPDATE rooms SET tenant_id = NULL, active = 1 WHERE id = ?", (room_id,))
+
+
+def remove_member(room_id, user_id):
+    execute("DELETE FROM room_members WHERE room_id = ? AND user_id = ?", (room_id, user_id))
+
+
+# ---------- Solicitudes ----------
+
+REQUEST_SELECT = """SELECT q.*, r.title, r.zone, r.price, r.landlord_id, r.active AS room_active,
+                           r.tenant_id AS room_tenant_id, t.name AS tenant_name
+                    FROM requests q JOIN rooms r ON r.id = q.room_id JOIN users t ON t.id = q.tenant_id"""
+
+
+def create_request(room_id, tenant_id, message, move_in, months):
+    return execute(
+        "INSERT INTO requests (room_id, tenant_id, message, move_in, months) VALUES (?,?,?,?,?)",
+        (room_id, tenant_id, message, move_in, months),
+    )
+
+
+def get_request(request_id):
+    return query_one(REQUEST_SELECT + " WHERE q.id = ?", (request_id,))
+
+
+def latest_request(room_id, tenant_id):
+    """Última solicitud de un inquilino para una habitación (cualquier estado), o None."""
+    return query_one(REQUEST_SELECT + " WHERE q.room_id = ? AND q.tenant_id = ? ORDER BY q.id DESC LIMIT 1",
+                     (room_id, tenant_id))
+
+
+def requests_for_room(room_id, status="pendiente"):
+    return query(REQUEST_SELECT + " WHERE q.room_id = ? AND q.status = ? ORDER BY q.id", (room_id, status))
+
+
+def count_requests_for_room(room_id):
+    """{estado: número} de las solicitudes de una habitación."""
+    rows = query("SELECT status, COUNT(*) AS n FROM requests WHERE room_id = ? GROUP BY status", (room_id,))
+    return {r["status"]: r["n"] for r in rows}
+
+
+def requests_of_tenant(tenant_id):
+    return query(REQUEST_SELECT + " WHERE q.tenant_id = ? ORDER BY q.id DESC", (tenant_id,))
+
+
+def pending_requests_for_member(user_id):
+    """Solicitudes pendientes para entrar en pisos donde vive el usuario (para que opine)."""
+    return query(
+        REQUEST_SELECT + """ JOIN room_members m ON m.room_id = q.room_id
+                             WHERE m.user_id = ? AND q.status = 'pendiente' ORDER BY q.id""",
+        (user_id,),
+    )
+
+
+def count_pending_requests_of_landlord(landlord_id):
+    return query_one(
+        """SELECT COUNT(*) AS n FROM requests q JOIN rooms r ON r.id = q.room_id
+           WHERE r.landlord_id = ? AND q.status = 'pendiente'""",
+        (landlord_id,),
+    )["n"]
+
+
+def set_request_status(request_id, status, note=None):
+    execute("UPDATE requests SET status = ?, note = ?, decided_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (status, note, request_id))
+
+
+def accept_request_tx(request_id):
+    """Acepta la solicitud en una sola transacción. Devuelve los ids de las solicitudes cerradas.
+
+    - la solicitud pasa a 'aceptada'; la habitación queda ocupada por el inquilino y deja de publicarse;
+    - si el inquilino ya ocupaba otra habitación, esa queda libre y se vuelve a publicar (mudanza);
+    - deja de figurar como compañero en otros pisos;
+    - se cierran las demás solicitudes pendientes de esa habitación y las del inquilino.
+    """
+    with connect() as conn:
+        q = conn.execute("SELECT room_id, tenant_id FROM requests WHERE id = ?", (request_id,)).fetchone()
+        room_id, tenant_id = q["room_id"], q["tenant_id"]
+        conn.execute("UPDATE requests SET status = 'aceptada', note = NULL, decided_at = CURRENT_TIMESTAMP "
+                     "WHERE id = ?", (request_id,))
+        conn.execute("UPDATE rooms SET tenant_id = NULL, active = 1 WHERE tenant_id = ? AND id <> ?",
+                     (tenant_id, room_id))
+        conn.execute("UPDATE rooms SET tenant_id = ?, active = 0 WHERE id = ?", (tenant_id, room_id))
+        conn.execute("DELETE FROM room_members WHERE user_id = ?", (tenant_id,))
+        closed_room = [r["id"] for r in conn.execute(
+            "SELECT id FROM requests WHERE room_id = ? AND status = 'pendiente' AND id <> ?",
+            (room_id, request_id))]
+        closed_tenant = [r["id"] for r in conn.execute(
+            "SELECT id FROM requests WHERE tenant_id = ? AND status = 'pendiente' AND id <> ?",
+            (tenant_id, request_id))]
+        conn.executemany(
+            "UPDATE requests SET status = 'cerrada', note = ?, decided_at = CURRENT_TIMESTAMP WHERE id = ?",
+            [("La habitación se ha alquilado a otra persona.", i) for i in closed_room]
+            + [("Encontraste otra habitación en RentFlow.", i) for i in closed_tenant],
+        )
+    return {"room": closed_room, "tenant": closed_tenant}
+
+
+def set_vote(request_id, user_id, vote):
+    execute(
+        """INSERT INTO request_votes (request_id, user_id, vote) VALUES (?,?,?)
+           ON CONFLICT(request_id, user_id) DO UPDATE SET vote = excluded.vote, created_at = CURRENT_TIMESTAMP""",
+        (request_id, user_id, vote),
+    )
+
+
+def votes_for(request_id):
+    """Opinión de cada compañero actual del piso sobre la solicitud (vote = 1, -1 o None si no ha opinado)."""
+    return query(
+        """SELECT u.id AS user_id, u.name, v.vote
+           FROM requests q
+           JOIN room_members m ON m.room_id = q.room_id
+           JOIN users u ON u.id = m.user_id
+           LEFT JOIN request_votes v ON v.request_id = q.id AND v.user_id = u.id
+           WHERE q.id = ? ORDER BY u.name""",
+        (request_id,),
+    )
 
 
 # ---------- Reseñas ----------
@@ -307,9 +500,10 @@ def conversations_of(user_id):
 
 
 def messages_of(conversation_id):
+    """Mensajes de una conversación. Los automáticos de RentFlow no tienen autor (author_role = 'sistema')."""
     return query(
-        """SELECT m.*, u.name AS author_name, u.role AS author_role FROM messages m
-           JOIN users u ON u.id = m.author_id
+        """SELECT m.*, COALESCE(u.name, 'RentFlow') AS author_name, COALESCE(u.role, 'sistema') AS author_role
+           FROM messages m LEFT JOIN users u ON u.id = m.author_id
            WHERE m.conversation_id = ? ORDER BY m.id""",
         (conversation_id,),
     )
@@ -318,6 +512,11 @@ def messages_of(conversation_id):
 def send_message(conversation_id, author_id, text):
     execute("INSERT INTO messages (conversation_id, author_id, text) VALUES (?,?,?)",
             (conversation_id, author_id, text))
+
+
+def send_system_message(conversation_id, text):
+    """Mensaje automático de RentFlow (sin autor): solicitudes, aceptaciones, bajas…"""
+    send_message(conversation_id, None, text)
 
 
 def interested_in(room_id):

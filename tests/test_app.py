@@ -82,3 +82,66 @@ def test_landlord_profile_page(tmp_path, monkeypatch):
     next(b for b in at.button if b.label == "Guardar perfil").click().run()
     assert not at.exception
     assert _db.get_user(carmen["id"])["bio"] == "Respondo en el día. Las averías, en menos de 48 h."
+
+
+def _login(at, name):
+    from rentflow import db as _db
+    at.session_state["login_choice"] = _db.find_user_by_name(name)["id"]
+    next(b for b in at.button if b.label == "Entrar").click().run()
+    assert not at.exception
+
+
+def test_landlord_accepts_request_from_dialog(tmp_path, monkeypatch):
+    at = _app(tmp_path, monkeypatch).run()
+    from rentflow import db as _db
+    from rentflow import rentals
+    rentals.send_request(1, 1, "Hola, soy Mario", "2027-01-10", 12)  # Mario pide la de Chamberí
+    _login(at, "Carmen Ruiz")
+    assert any("Solicitudes (2)" in t.label for t in at.tabs)  # Mario y el rival
+    mario_req = _db.latest_request(1, 1)["id"]
+    at.button(key=f"acc{mario_req}").click().run()
+    next(b for b in at.button if b.label == "Aceptar y alquilar").click().run()
+    assert not at.exception
+    assert _db.get_room(1)["tenant_id"] == 1
+
+    at.sidebar.radio[0].set_value("Mis inquilinos").run()
+    assert not at.exception
+    assert any("Mario Rossi" in m.value for m in at.markdown)
+
+
+def test_tenant_request_pages(tmp_path, monkeypatch):
+    at = _app(tmp_path, monkeypatch).run()
+    from rentflow import rentals
+    at.button[0].click().run()  # Mario
+    for page in ["Mis solicitudes", "Mi piso"]:
+        at.sidebar.radio[0].set_value(page).run()
+        assert not at.exception, page
+    rentals.send_request(1, 1, "", "2027-01-10", 12)
+    at.sidebar.radio[0].set_value("Mis solicitudes").run()
+    assert not at.exception
+    assert any("Pendiente" in m.value for m in at.markdown)
+
+
+def test_roommate_votes_in_my_flat(tmp_path, monkeypatch):
+    at = _app(tmp_path, monkeypatch).run()
+    from rentflow import db as _db
+    _login(at, "Tom Becker")
+    at.sidebar.radio[0].set_value("Mi piso").run()
+    assert not at.exception
+    rival = _db.requests_for_room(1)[0]["id"]
+    at.button(key=f"up{rival}").click().run()  # Tom cambia de opinión: ahora sí le encaja
+    assert not at.exception
+    assert [v["vote"] for v in _db.votes_for(rival)] == [1, 1]
+
+
+def test_tenant_sends_request_from_dialog(tmp_path, monkeypatch):
+    at = _app(tmp_path, monkeypatch).run()
+    from rentflow import db as _db
+    at.button[0].click().run()  # Mario
+    at.button(key="det1").click().run()
+    next(b for b in at.button if b.label == "Solicitar esta habitación").click().run()
+    next(b for b in at.button if b.label == "Enviar solicitud").click().run()
+    assert not at.exception
+    req = _db.latest_request(1, 1)
+    assert req and req["status"] == "pendiente" and req["months"] == 12
+    assert any("Solicitud enviada" in m.value for m in at.markdown)

@@ -3,10 +3,9 @@ import streamlit as st
 
 from rentflow import db
 from rentflow.ui.navigation import PAGE_MATCHES, PAGE_MY_ROOMS, go
-from rentflow.ui.theme import ICON, empty_state
+from rentflow.ui.theme import APP_ICON, ICON, empty_state
 
-# Avatares (DESIGN.md §7) con iconos Material, sin emojis.
-# Si se añaden mensajes automáticos de RentFlow, usar theme.APP_ICON como avatar.
+# Avatares (DESIGN.md §7) con iconos Material, sin emojis; los mensajes automáticos llevan el icono de la app.
 AVATAR_ME = ":material/sentiment_satisfied:"
 AVATAR_LANDLORD = ":material/home:"
 AVATAR_MATE = ":material/person:"
@@ -38,8 +37,10 @@ def page_messages(user):
     landlord = db.get_user(room["landlord_id"])
     mates = db.roommates(room["id"])
     tenant = db.get_user(conv["tenant_id"])
-    people = ([f"{tenant['name']} (interesado)", f"{landlord['name']} (casero)"]
-              + [f"{m['name']} (compañero)" for m in mates])
+    tenant_role = "vive aquí" if room["tenant_id"] == tenant["id"] else (
+        "compañero" if any(m["id"] == tenant["id"] for m in mates) else "interesado")
+    people = ([f"{tenant['name']} ({tenant_role})", f"{landlord['name']} (casero)"]
+              + [f"{m['name']} (compañero)" for m in mates if m["id"] != tenant["id"]])
     st.caption(f"{ICON['mates']} En esta conversación: " + ", ".join(people))
 
     msgs = db.messages_of(conv_id)
@@ -47,7 +48,9 @@ def page_messages(user):
     with st.container(border=True, height=440 if len(msgs) > 5 else "content"):
         for msg in msgs:
             mine = msg["author_id"] == user["id"]
-            if mine:
+            if msg["author_role"] == "sistema":
+                avatar = str(APP_ICON)
+            elif mine:
                 avatar = AVATAR_ME
             elif msg["author_role"] == "casero":
                 avatar = AVATAR_LANDLORD
@@ -65,6 +68,9 @@ def page_messages(user):
 
     with st.expander("Valorar a alguien de esta conversación", icon=ICON["star"]):
         others = {p["id"]: p["name"] for p in [tenant, landlord] + mates if p["id"] != user["id"]}
+        if not others:
+            st.caption("No hay nadie más en esta conversación.")
+            return
         with st.form(f"review{conv_id}", clear_on_submit=True, border=False):
             c1, c2 = st.columns([2, 1])
             target_id = c1.selectbox("¿A quién?", list(others), format_func=others.get)

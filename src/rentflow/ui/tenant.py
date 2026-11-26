@@ -4,20 +4,30 @@ from html import escape
 
 import streamlit as st
 
-from rentflow import db, matching
+from rentflow import db, matching, rentals
 from rentflow.ui.components import (
     about_fields,
     habit_line,
     person_header,
     rating_line,
+    request_badge,
     room_badges,
     room_facts,
     room_photo,
     verified_badge,
+    votes_text,
 )
 from rentflow.ui.maps import LAYER_ID, rooms_deck
-from rentflow.ui.navigation import PAGE_MATCHES, PAGE_MESSAGES, PAGE_PROFILE, flash, go
-from rentflow.ui.theme import ICON, badges, empty_state, review_html, score_block
+from rentflow.ui.navigation import (
+    PAGE_MATCHES,
+    PAGE_MESSAGES,
+    PAGE_MY_FLAT,
+    PAGE_PROFILE,
+    PAGE_REQUESTS,
+    flash,
+    go,
+)
+from rentflow.ui.theme import ICON, badge, badges, empty_state, review_html, score_block
 
 PAGE_SIZE = 10  # tarjetas por tanda en la vista de lista ("Ver más" añade otras tantas)
 VIEWS = {"Lista": ICON["list"], "Mapa": ICON["map"]}
@@ -42,6 +52,10 @@ def page_matches(user):
     if not st.session_state.get("logged_matches"):
         db.log_event(user["id"], "ver_matches")
         st.session_state.logged_matches = True
+
+    if home := db.occupied_room(user["id"]):
+        st.info(f"Ya vives en «{home['title']}». Puedes seguir mirando otras habitaciones.",
+                icon=":material/cottage:")
 
     all_results = matching.matches_for(user["id"], limit=None)
     if not all_results:
@@ -244,11 +258,63 @@ def room_detail(user, prefs, room_id):
                 st.progress(value, text=f"{factor} ({int(matching.WEIGHTS[factor] * 100)} %): {round(value * 100)} %")
         else:
             st.caption("Esta habitación no cumple alguno de tus requisitos.")
-        st.button("Contactar con el casero y los compañeros", icon=ICON["chat"], type="primary", width="stretch",
+        request_block(user, room, prefs)
+        st.button("Contactar con el casero y los compañeros", icon=ICON["chat"], width="stretch",
                   on_click=contact, args=(user, room))
         st.caption(f"{ICON['zone']} Ubicación aproximada · {room['zone']}")
         st.pydeck_chart(rooms_deck([{"room": room, "score": scored[0] if scored else None}],
                                    zoom=14, show_scores=False), height=170, key=f"minimap{room_id}")
+
+
+def request_block(user, room, prefs):
+    """Estado de la solicitud del inquilino para esta habitación y el botón principal de la ficha."""
+    req = db.latest_request(room["id"], user["id"])
+    if room["tenant_id"] == user["id"]:
+        badges([badge("Es tu habitación", "verified")])
+        st.button("Ir a mi piso", icon=":material/cottage:", width="stretch", on_click=go, args=(PAGE_MY_FLAT,))
+        return
+    reason = rentals.can_request(user["id"], room)
+    if req and req["status"] == "pendiente":
+        st.markdown(f"**Solicitud enviada** {request_badge('pendiente')}", unsafe_allow_html=True)
+        st.caption(votes_text(req["id"], names=False))
+        st.button("Ver mis solicitudes", icon=":material/send:", type="tertiary",
+                  on_click=go, args=(PAGE_REQUESTS,))
+    elif reason:
+        st.caption(reason)
+    else:
+        if req:  # una anterior rechazada, retirada o cerrada: se puede volver a pedir
+            st.caption(f"Tu última solicitud: {req['status']}.")
+        st.button("Solicitar esta habitación", icon=":material/send:", type="primary", width="stretch",
+                  on_click=lambda: st.session_state.update(_request_dialog=room["id"]))
+    if st.session_state.get("_request_dialog") == room["id"]:
+        request_dialog(user, room, prefs)
+
+
+@st.dialog("Solicitar habitación", on_dismiss=lambda: st.session_state.pop("_request_dialog", None))
+def request_dialog(user, room, prefs):
+    # La marca _request_dialog mantiene el diálogo abierto; se borra al enviar o al cerrarlo
+    st.markdown(f"**{room['title']}** · {room['price']} €/mes")
+    st.caption("El casero recibe tu solicitud junto a tu perfil y tu compatibilidad. Los compañeros del piso "
+               "pueden dar su opinión antes de que decida.")
+    first = max(date.fromisoformat(prefs["move_in"]), date.fromisoformat(room["available_from"]), date.today())
+    with st.form("request_form", border=False):
+        message = st.text_area(
+            "Preséntate", max_chars=400, height=110,
+            value=f"¡Hola! Soy {user['name'].split()[0]}. Me encaja mucho la habitación y creo que "
+                  "conviviríamos bien. ¿Os parece que la visite?")
+        c1, c2 = st.columns(2)
+        move_in = c1.date_input("Fecha de entrada", first, min_value=date.today())
+        months = c2.selectbox("Estancia", rentals.MONTHS, index=len(rentals.MONTHS) - 1,
+                              format_func=lambda m: f"{m} meses")
+        if st.form_submit_button("Enviar solicitud", type="primary", width="stretch"):
+            try:
+                rentals.send_request(user["id"], room["id"], message, move_in, months)
+            except rentals.RentalError as e:
+                st.error(str(e))
+            else:
+                st.session_state.pop("_request_dialog", None)
+                flash("Solicitud enviada. Te avisaremos en el chat cuando el casero decida.")
+                st.rerun()
 
 
 def log_reviews_opened(user_id, room_id):

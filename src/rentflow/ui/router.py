@@ -14,14 +14,19 @@ from rentflow.ui.navigation import (
     PAGE_MATCHES,
     PAGE_MESSAGES,
     PAGE_METRICS,
+    PAGE_MY_FLAT,
     PAGE_MY_ROOMS,
     PAGE_PROFILE,
     PAGE_PUBLISH,
+    PAGE_REQUESTS,
+    PAGE_RESIDENTS,
     TENANT_PAGES,
     keep_widget_state,
     logout,
     show_flash,
 )
+from rentflow.ui.requests import page_my_flat, page_my_requests
+from rentflow.ui.residents import page_residents
 from rentflow.ui.tenant import page_matches, page_profile
 from rentflow.ui.theme import ICON, setup_page
 
@@ -33,6 +38,9 @@ ROUTES = {
     PAGE_MESSAGES: page_messages,
     PAGE_METRICS: page_metrics,
     PAGE_LANDLORD_PROFILE: page_landlord_profile,
+    PAGE_REQUESTS: page_my_requests,
+    PAGE_MY_FLAT: page_my_flat,
+    PAGE_RESIDENTS: page_residents,
 }
 
 

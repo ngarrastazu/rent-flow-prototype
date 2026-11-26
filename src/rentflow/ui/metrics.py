@@ -36,6 +36,17 @@ def page_metrics(_user=None):
     st.caption("I11 no se validó en entrevistas (pesa más el volumen de pisos): estas cifras dicen si exploran "
                "la oferta más allá de los primeros matches.")
 
+    st.markdown("##### Del match al piso · solicitudes")
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Envían solicitud", pct(db.users_with_event("solicitar")), border=True,
+              help="Inquilinos que han solicitado al menos una habitación")
+    c2.metric("Solicitudes aceptadas", db.count_events("aceptar_solicitud"), border=True,
+              help="Habitaciones alquiladas a través de RentFlow")
+    c3.metric("Rechazadas", db.count_events("rechazar_solicitud"), border=True)
+    c4.metric("Compañeros que opinan", db.users_with_event("votar"), border=True,
+              help="I9 · doble aceptación: los compañeros dan su visto bueno al candidato")
+    st.caption("Mide si el match termina en alquiler y si los compañeros participan en la decisión (I9).")
+
     st.subheader("Últimas acciones")
     st.dataframe(
         db.recent_events(50), width="stretch", hide_index=True,

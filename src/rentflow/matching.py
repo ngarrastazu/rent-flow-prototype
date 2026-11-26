@@ -52,6 +52,17 @@ def _habits_vs(tenant: Row, mate: Row) -> tuple[float, float, float]:
     return schedule, clean, lifestyle
 
 
+def pair_affinity(a: Row, b: Row) -> int:
+    """Afinidad de hábitos entre dos personas, de 0 a 100 (horario, limpieza y estilo de vida).
+
+    Usa los mismos factores y pesos relativos que la puntuación de una habitación (20/15/15),
+    así que los compañeros ven la compatibilidad de un candidato con cada uno de ellos.
+    """
+    schedule, clean, lifestyle = _habits_vs(a, b)
+    w_s, w_c, w_l = WEIGHTS["Horarios"], WEIGHTS["Limpieza"], WEIGHTS["Estilo de vida"]
+    return round(100 * (w_s * schedule + w_c * clean + w_l * lifestyle) / (w_s + w_c + w_l))
+
+
 def score_room(prefs: Row, room: Row, mates_prefs: list[Row]) -> tuple[int, dict[str, float]] | None:
     """Devuelve (puntuación 0-100, desglose por factor) o None si un filtro duro descarta el piso."""
     # 1. Filtros duros

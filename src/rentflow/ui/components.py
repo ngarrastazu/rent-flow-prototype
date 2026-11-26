@@ -6,6 +6,36 @@ import streamlit as st
 from rentflow import db
 from rentflow.ui.theme import ICON, ROOM_PLACEHOLDER, badge, stars_html
 
+# Estado de una solicitud -> (texto de la insignia, tipo de insignia)
+REQUEST_STATUS = {
+    "pendiente": ("Pendiente", "brand"),
+    "aceptada": ("Aceptada", "verified"),
+    "rechazada": ("Rechazada", "muted"),
+    "retirada": ("Retirada", "muted"),
+    "cerrada": ("Cerrada", "muted"),
+}
+
+
+def request_badge(status):
+    text, kind = REQUEST_STATUS[status]
+    return badge(text, kind)
+
+
+def votes_text(request_id, names=True):
+    """Opinión de los compañeros sobre una solicitud, en una línea.
+
+    names=True (casero): «Lucía: le encaja · Tom: no le encaja · Ana: sin opinar».
+    names=False (candidato): «1 de 2 compañeros te han dado el visto bueno».
+    """
+    votes = db.votes_for(request_id)
+    if not votes:
+        return "Piso sin compañeros: decide solo el casero."
+    if not names:
+        yes = sum(v["vote"] == 1 for v in votes)
+        return f"{yes} de {len(votes)} compañeros te han dado el visto bueno."
+    label = {1: "le encaja", -1: "no le encaja", None: "sin opinar"}
+    return " · ".join(f"{v['name'].split()[0]}: {label[v['vote']]}" for v in votes)
+
 
 def verified_badge(user):
     """HTML de la insignia de verificado, o cadena vacía."""

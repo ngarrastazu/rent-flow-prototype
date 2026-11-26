@@ -6,7 +6,7 @@ Uso:  uv run rentflow-seed     -> borra la base de datos y la vuelve a crear
 import random
 from datetime import date, timedelta
 
-from rentflow import db
+from rentflow import db, matching
 
 SEED = 42  # semilla fija: los datos son siempre los mismos
 
@@ -97,6 +97,19 @@ def random_prefs(uid, segment):
     )
 
 
+def seed_request(room_id, tenant_id, message):
+    """Solicitud pendiente de ejemplo (sin registrar eventos: las métricas empiezan a cero)."""
+    prefs = db.get_preferences(tenant_id)
+    request_id = db.create_request(room_id, tenant_id, message, prefs["move_in"], 12)
+    conv, _ = db.get_or_create_conversation(room_id, tenant_id)
+    tenant = db.get_user(tenant_id)
+    db.send_system_message(conv, f"{tenant['name']} ha solicitado esta habitación: entrada el {prefs['move_in']}, "
+                                 "estancia de 12 meses. Los compañeros pueden dar su opinión.")
+    if message:
+        db.send_message(conv, tenant_id, message)
+    return request_id
+
+
 def make_tenant(name):
     segment = random.choice(list(OCCUPATIONS))
     age = {"Erasmus": random.randint(20, 24), "Estudiante": random.randint(19, 25),
@@ -176,6 +189,16 @@ def seed():
         for tenant in seekers[:2]:
             conv, _ = db.get_or_create_conversation(room["id"], tenant)
             db.send_message(conv, tenant, "¡Hola! Me interesa la habitación. ¿Se puede visitar esta semana?")
+            seed_request(room["id"], tenant, "")
+
+    # --- Un candidato que compite con Mario por la habitación de Chamberí (sin random) ---
+    # Lucía lo ve bien y Tom no tanto: Carmen tiene algo que decidir en la demo.
+    rival = next(c["tenant"]["id"] for c in matching.candidates_for(1) if c["tenant"]["id"] != mario)
+    conv, _ = db.get_or_create_conversation(1, rival)
+    db.send_message(conv, rival, "¡Hola! La habitación me encaja muchísimo. ¿Podría verla el jueves?")
+    request_id = seed_request(1, rival, "Trabajo en remoto y soy muy tranquilo. Me quedaría al menos un año.")
+    db.set_vote(request_id, lucia, 1)
+    db.set_vote(request_id, tom, -1)
 
     print(f"Base de datos creada en {db.DB_PATH}")
     print(f"  {len(db.list_users('inquilino'))} inquilinos, {len(landlords)} caseros, "

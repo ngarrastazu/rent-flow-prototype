@@ -26,13 +26,18 @@ la app funciona, pero el mapa sale sin calles.
    Prueba los filtros (precio, zona, baño propio) y cambia a **Mapa**: pulsa un punto para ver su resumen.
 3. **Ver detalles**: compañeros (Lucía y Tom) con sus hábitos, el casero verificado y el desglose
    "Por qué este match". Activa **Ver reseñas**.
-4. **Contactar**: se abre el chat con el casero y los compañeros.
-   En **Mi perfil y hábitos** puedes editar a qué te dedicas y tu descripción (el nombre verificado no se cambia).
-5. Cierra sesión y entra como **Carmen Ruiz · casero**: en **Mis habitaciones** ve a Mario como interesado
-   y la lista de inquilinos más compatibles (búsqueda inversa). Contesta en el chat. En **Mi perfil** edita su
-   presentación, que es la que ven los inquilinos.
-6. **Métricas (equipo)**: cada acción queda registrada y se compara con las Test Cards (I9, I12, chat) y con
-   la exploración de la oferta (I11: filtros, mapa y fichas abiertas).
+4. **Solicitar esta habitación**: Mario se presenta, elige fecha de entrada y estancia. En **Mis solicitudes**
+   ve el estado y cuántos compañeros le han dado el visto bueno. (También puede **Contactar** por el chat.)
+5. *(Opcional)* Entra como **Lucía Martín** o **Tom Becker**: en **Mi piso** ven a los candidatos (Mario y un rival)
+   con su afinidad de hábitos y opinan **Me encaja / No me encaja**.
+6. Entra como **Carmen Ruiz · casero**: en **Mis habitaciones**, pestaña **Solicitudes** de la habitación de
+   Chamberí, compara a Mario (94 %) con el rival y la opinión de los compañeros. **Aceptar** → la habitación queda
+   alquilada, el rival recibe un aviso y Mario aparece en **Mis inquilinos**, desde donde se le puede escribir o dar
+   de baja. Las pestañas **Más compatibles** y **Chats** muestran la búsqueda inversa y las conversaciones.
+7. Vuelve a entrar como Mario: **Mi piso** muestra su nueva habitación y sus compañeros; el chat tiene los avisos
+   de RentFlow. En **Mi perfil y hábitos** puede editar a qué se dedica y su descripción.
+8. **Métricas (equipo)**: cada acción queda registrada y se compara con las Test Cards (I9, I12, chat) y con
+   la exploración de la oferta (I11: filtros, mapa y fichas abiertas) y la conversión de solicitudes.
 
 Para volver al estado inicial: **Métricas → Reiniciar datos de la demo**, o `uv run rentflow-seed`.
 
@@ -45,6 +50,7 @@ Tests: `uv run pytest` (comprueban, entre otras cosas, que el match de Mario sig
 | `app.py` | Punto de entrada de Streamlit |
 | `src/rentflow/ui/` | Interfaz: una pantalla por archivo (entrada, inquilino, casero, mensajes, métricas) |
 | `src/rentflow/matching.py` | Algoritmo de compatibilidad (filtros duros + puntuación ponderada) |
+| `src/rentflow/rentals.py` | Solicitudes, opinión de los compañeros, aceptar/rechazar y bajas |
 | `src/rentflow/db.py` | Esquema SQLite y funciones de acceso a datos |
 | `src/rentflow/seed.py` | Datos de ejemplo de Madrid (semilla fija: siempre los mismos) |
 | `tests/` | Tests con pytest (algoritmo, datos de la demo e interfaz) |

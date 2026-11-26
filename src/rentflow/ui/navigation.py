@@ -13,6 +13,9 @@ PAGE_PUBLISH = "Publicar habitación"
 PAGE_MESSAGES = "Mensajes"
 PAGE_METRICS = "Métricas (equipo)"
 PAGE_LANDLORD_PROFILE = "Mi perfil"
+PAGE_REQUESTS = "Mis solicitudes"
+PAGE_MY_FLAT = "Mi piso"
+PAGE_RESIDENTS = "Mis inquilinos"
 
 # Icono Material de cada página en el menú (sin emojis: DESIGN.md §9)
 PAGE_ICONS = {
@@ -23,14 +26,17 @@ PAGE_ICONS = {
     PAGE_MESSAGES: ":material/chat:",
     PAGE_METRICS: ":material/insights:",
     PAGE_LANDLORD_PROFILE: ":material/person:",
+    PAGE_REQUESTS: ":material/send:",
+    PAGE_MY_FLAT: ":material/cottage:",
+    PAGE_RESIDENTS: ":material/groups:",
 }
 
 # Estado de widgets que debe sobrevivir al salir y volver a la página (filtros de "Mis matches").
 # Streamlit borra el estado de un widget que no se dibuja; router.main() lo re-asigna en cada ejecución.
 PERSISTENT_KEYS = ("f_price", "f_zones", "f_bath", "f_sort", "f_view")
 
-TENANT_PAGES = [PAGE_MATCHES, PAGE_PROFILE, PAGE_MESSAGES, PAGE_METRICS]
-LANDLORD_PAGES = [PAGE_MY_ROOMS, PAGE_PUBLISH, PAGE_MESSAGES, PAGE_LANDLORD_PROFILE, PAGE_METRICS]
+TENANT_PAGES = [PAGE_MATCHES, PAGE_REQUESTS, PAGE_MY_FLAT, PAGE_PROFILE, PAGE_MESSAGES, PAGE_METRICS]
+LANDLORD_PAGES = [PAGE_MY_ROOMS, PAGE_RESIDENTS, PAGE_PUBLISH, PAGE_MESSAGES, PAGE_LANDLORD_PROFILE, PAGE_METRICS]
 
 
 def go(page, **state):
@@ -38,6 +44,12 @@ def go(page, **state):
     st.session_state.page = page
     for k, v in state.items():
         st.session_state[k] = v
+
+
+def open_chat(room_id, tenant_id):
+    """Callback: abre (o crea) la conversación de esa habitación con ese inquilino y va a Mensajes."""
+    conv, _ = db.get_or_create_conversation(room_id, tenant_id)
+    go(PAGE_MESSAGES, conversation_id=conv, selected_room=None)
 
 
 def login(user_id):
